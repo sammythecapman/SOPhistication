@@ -51,20 +51,25 @@ function categorizeFields(data: Record<string, string>) {
   return categories;
 }
 
-function ConfidenceDot({ tier, className }: { tier?: "green" | "yellow" | "red"; className?: string }) {
-  if (!tier || tier === "green") {
-    return (
-      <div className={cn("w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)] shrink-0", className)} />
-    );
+function ConfidenceDot({ tier, hasValue, className }: {
+  tier?: "green" | "yellow" | "red";
+  hasValue: boolean;
+  className?: string;
+}) {
+  if (!hasValue) {
+    return <div className={cn("w-2 h-2 rounded-full bg-muted-foreground/20 shrink-0", className)} />;
+  }
+  if (tier === "green") {
+    return <div className={cn("w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)] shrink-0", className)} />;
   }
   if (tier === "yellow") {
-    return (
-      <div className={cn("w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(234,179,8,0.5)] shrink-0", className)} />
-    );
+    return <div className={cn("w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(234,179,8,0.5)] shrink-0", className)} />;
   }
-  return (
-    <div className={cn("w-2 h-2 rounded-full bg-red-600 shadow-[0_0_8px_rgba(220,38,38,0.6)] shrink-0 animate-pulse", className)} />
-  );
+  if (tier === "red") {
+    return <div className={cn("w-2 h-2 rounded-full bg-red-600 shadow-[0_0_8px_rgba(220,38,38,0.6)] shrink-0 animate-pulse", className)} />;
+  }
+  // Field has a value but isn't scored by the confidence engine (amounts, dates, etc.)
+  return <div className={cn("w-2 h-2 rounded-full bg-[#D4523A] shadow-[0_0_8px_rgba(212,82,58,0.35)] shrink-0", className)} />;
 }
 
 function FeedbackButtons({
@@ -150,21 +155,21 @@ function FieldCard({
   extractionId: number;
 }) {
   const [feedback, setFeedback] = useState<"correct" | "incorrect" | null>(null);
-  const hasValue = value && value.trim() !== "";
-  const tier = hasValue && score ? score.confidence_tier : undefined;
-  const isRed = tier === "red";
-  const isYellow = tier === "yellow";
-  const showFeedback = (isRed || isYellow) && hasValue;
+  const hasValue = !!(value && value.trim() !== "");
+  const tier = score?.confidence_tier;
+  const isRed = tier === "red" && hasValue;
+  const isYellow = tier === "yellow" && hasValue;
+  const showFeedback = (isRed || isYellow);
 
   return (
     <div
       className={cn(
         "p-4 transition-colors flex items-start gap-3",
         index >= 3 ? "md:border-t border-border" : "",
-        isRed ? "bg-red-50/60 hover:bg-red-50" : isYellow ? "bg-amber-50/40 hover:bg-amber-50/60" : "hover:bg-[hsl(40,20%,98%)]"
+        isRed ? "bg-red-50/60 hover:bg-red-50" : isYellow ? "bg-yellow-50/40 hover:bg-yellow-50/60" : "hover:bg-[hsl(40,20%,98%)]"
       )}
     >
-      <ConfidenceDot tier={hasValue ? tier : undefined} className="mt-1.5" />
+      <ConfidenceDot tier={tier} hasValue={hasValue} className="mt-1.5" />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-muted-foreground mb-1 truncate" title={fieldKey}>
           {fieldKey}
