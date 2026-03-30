@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "SBA Loan Extraction Tool"
+version = "1.0.0"
+id = "artifacts/sba-web"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21230
+
+[services.development]
+run = "pnpm --filter @workspace/sba-web run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sba-web", "run", "build" ]
+publicDir = "artifacts/sba-web/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21230"
+BASE_PATH = "/"

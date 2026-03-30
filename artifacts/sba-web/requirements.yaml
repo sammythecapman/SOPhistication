@@ -1,0 +1,18 @@
+packages:
+  "framer-motion": "For smooth page transitions and progress animations"
+  "react-dropzone": "For beautiful drag-and-drop PDF upload zones"
+  "lucide-react": "For professional iconography"
+  "date-fns": "For formatting extraction dates in the history view"
+  "clsx": "For merging tailwind classes"
+  "tailwind-merge": "For resolving tailwind class conflicts"
+  "@radix-ui/react-tooltip": "For the SharePoint coming soon tooltip"
+
+images:
+  - path: "artifacts/sba-web/public/images/law-bg.png"
+    description: "Abstract, very subtle and minimal geometric lines in light slate and navy colors, extremely clean and corporate, suitable for a law firm background overlay"
+    aspect_ratio: "16:9"
+
+notes:
+  - "Assuming @workspace/api-client-react provides the generated TanStack hooks"
+  - "Using polling via TanStack Query refetchInterval for the extraction job status"
+  - "Assuming React 19 / TanStack v5 environment"

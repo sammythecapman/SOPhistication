@@ -1,22 +1,22 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: SBA Loan Data Extraction Tool API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: extractions
+    description: Extraction jobs and history
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +24,164 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /extract:
+    post:
+      operationId: startExtraction
+      tags: [extractions]
+      summary: Start a new extraction job
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [terms_pdf]
+              properties:
+                terms_pdf:
+                  type: string
+                  format: binary
+                  description: Terms & Conditions PDF
+                credit_memo_pdf:
+                  type: string
+                  format: binary
+                  description: Optional Credit Memo PDF
+      responses:
+        "202":
+          description: Extraction job started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractionJobCreated"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /jobs/{jobId}:
+    get:
+      operationId: getJobStatus
+      tags: [extractions]
+      summary: Get extraction job status and result
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractionJob"
+        "404":
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /extractions:
+    get:
+      operationId: listExtractions
+      tags: [extractions]
+      summary: List all past extractions
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of extractions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractionList"
+
+  /extractions/{id}:
+    get:
+      operationId: getExtraction
+      tags: [extractions]
+      summary: Get a specific extraction by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Extraction details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractionDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteExtraction
+      tags: [extractions]
+      summary: Delete an extraction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /extractions/{id}/download:
+    get:
+      operationId: downloadExtraction
+      tags: [extractions]
+      summary: Download formatted JSON for an extraction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: JSON file download
+          content:
+            application/json:
+              schema:
+                type: object
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +189,165 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    ExtractionJobCreated:
+      type: object
+      properties:
+        job_id:
+          type: string
+        message:
+          type: string
+      required: [job_id, message]
+
+    ExtractionJob:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, complete, failed]
+        stage:
+          type: string
+          enum:
+            - reading_pdf
+            - running_ner
+            - analyzing_deal
+            - extracting_fields
+            - validating
+            - formatting
+            - complete
+            - failed
+        stage_label:
+          type: string
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        error:
+          type: string
+          nullable: true
+        extraction_id:
+          type: integer
+          nullable: true
+        result:
+          nullable: true
+          $ref: "#/components/schemas/ExtractionDetail"
+      required: [job_id, status, stage, stage_label, progress]
+
+    ExtractionSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        terms_filename:
+          type: string
+        credit_memo_filename:
+          type: string
+          nullable: true
+        deal_type:
+          type: string
+          nullable: true
+        loan_program:
+          type: string
+          nullable: true
+        borrower_name:
+          type: string
+          nullable: true
+        loan_amount:
+          type: string
+          nullable: true
+        fields_populated:
+          type: integer
+        fields_total:
+          type: integer
+        completion_pct:
+          type: number
+        created_at:
+          type: string
+        has_ner_warnings:
+          type: boolean
+      required:
+        - id
+        - terms_filename
+        - fields_populated
+        - fields_total
+        - completion_pct
+        - created_at
+        - has_ner_warnings
+
+    ExtractionDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        terms_filename:
+          type: string
+        credit_memo_filename:
+          type: string
+          nullable: true
+        deal_structure:
+          type: object
+          additionalProperties: true
+          nullable: true
+        formatted_data:
+          type: object
+          additionalProperties:
+            type: string
+        raw_data:
+          type: object
+          additionalProperties: true
+          nullable: true
+        ner_warnings:
+          type: array
+          items:
+            type: string
+        fields_populated:
+          type: integer
+        fields_total:
+          type: integer
+        completion_pct:
+          type: number
+        created_at:
+          type: string
+      required:
+        - id
+        - terms_filename
+        - formatted_data
+        - ner_warnings
+        - fields_populated
+        - fields_total
+        - completion_pct
+        - created_at
+
+    ExtractionList:
+      type: object
+      properties:
+        extractions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExtractionSummary"
+        total:
+          type: integer
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total_pages:
+          type: integer
+      required: [extractions, total, page, per_page, total_pages]
+
+    SuccessResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]

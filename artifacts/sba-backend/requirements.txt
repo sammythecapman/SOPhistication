@@ -1,0 +1,12 @@
+anthropic>=0.40.0
+pdfplumber>=0.11.0
+spacy==3.8.11
+python-dateutil>=2.9.0
+msal>=1.31.0
+requests>=2.32.0
+flask>=3.1.0
+flask-cors>=5.0.0
+psycopg2-binary>=2.9.0
+gunicorn>=23.0.0
+python-dotenv>=1.0.0
+Werkzeug>=3.1.0
