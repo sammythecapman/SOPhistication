@@ -35,7 +35,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             className="w-12 h-12 rounded-lg object-cover shrink-0 bg-white"
           />
           <div>
-            <h1 className="font-serif text-base font-bold tracking-widest uppercase leading-tight">
+            <h1 className="font-serif text-base font-bold tracking-widest uppercase leading-tight text-[hsl(40,20%,95%)]">
               Johnson Bealka
             </h1>
             <p className="text-[10px] text-primary-foreground/55 tracking-widest uppercase mt-0.5">

@@ -137,7 +137,7 @@ export default function Home() {
             New Document Extraction
           </h1>
           <p className="text-muted-foreground text-lg max-w-2xl">
-            Upload SBA Loan Terms & Conditions and optional Credit Memos. Our legal AI will extract all critical deal parameters in seconds.
+            Upload SBA Loan Terms & Conditions, Credit Memos, and any supplementary documentation and our legal AI will extract all the critical deal parameters in seconds.
           </p>
         </div>
       )}
