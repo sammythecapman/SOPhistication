@@ -29,10 +29,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       )}>
         {/* Logo / Brand */}
         <div className="p-6 flex items-center gap-3 border-b border-primary-foreground/10">
-          {/* JB monogram mark — styled after the firm's rounded square logo */}
-          <div className="w-10 h-10 rounded-lg bg-[#D4523A] flex items-center justify-center shrink-0 shadow-md">
-            <span className="font-bold text-white text-sm tracking-wider">JB</span>
-          </div>
+          <img
+            src={`${import.meta.env.BASE_URL}jb-logo.png`}
+            alt="Johnson Bealka logo"
+            className="w-12 h-12 rounded-lg object-cover shrink-0 bg-white"
+          />
           <div>
             <h1 className="font-serif text-base font-bold tracking-widest uppercase leading-tight">
               Johnson Bealka
