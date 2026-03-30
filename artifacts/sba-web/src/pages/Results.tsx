@@ -58,7 +58,7 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetail }) {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       
       {/* Header Summary Card */}
-      <Card className="bg-gradient-to-br from-white to-slate-50 border-slate-200 shadow-sm overflow-hidden relative">
+      <Card className="bg-gradient-to-br from-white to-[hsl(40,20%,97%)] border-border shadow-sm overflow-hidden relative">
         <div className="absolute top-0 right-0 p-8 opacity-5">
           <FileCheck2 className="w-32 h-32" />
         </div>
@@ -67,42 +67,42 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetail }) {
             <div className="space-y-4 relative z-10">
               <div>
                 <div className="flex items-center gap-3 mb-2">
-                  <span className="px-3 py-1 bg-primary/10 text-primary text-xs font-semibold rounded-full uppercase tracking-wider">
+                  <span className="px-3 py-1 bg-[#D4523A]/10 text-[#D4523A] text-xs font-semibold rounded-full uppercase tracking-wider">
                     {extraction.deal_structure?.deal_type || "SBA Loan"}
                   </span>
                   <span className="text-sm text-muted-foreground font-medium">
                     ID: #{extraction.id}
                   </span>
                 </div>
-                <h2 className="text-3xl font-serif font-bold text-slate-900">
+                <h2 className="text-3xl font-serif font-bold text-foreground">
                   {extraction.formatted_data["Borrower1Name"] || "Unknown Borrower"}
                 </h2>
-                <p className="text-slate-500 mt-1 flex items-center gap-2">
+                <p className="text-muted-foreground mt-1 flex items-center gap-2">
                   <FileTextIcon className="w-4 h-4" /> 
-                  Source: <span className="font-medium text-slate-700">{extraction.terms_filename}</span>
+                  Source: <span className="font-medium text-foreground">{extraction.terms_filename}</span>
                 </p>
               </div>
               
               <div className="flex items-center gap-6 pt-2">
                 <div>
-                  <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Loan Amount</p>
-                  <p className="text-xl font-semibold text-slate-900">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Loan Amount</p>
+                  <p className="text-xl font-semibold text-foreground">
                     {formatCurrency(extraction.formatted_data["LoanAmountShort"])}
                   </p>
                 </div>
-                <div className="w-px h-10 bg-slate-200" />
+                <div className="w-px h-10 bg-border" />
                 <div>
-                  <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Data Completion</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Data Completion</p>
                   <div className="flex items-center gap-2">
-                    <p className="text-xl font-semibold text-slate-900">{completion}%</p>
-                    <span className="text-xs text-slate-500">({totalPopulated}/{totalFields} fields)</span>
+                    <p className="text-xl font-semibold text-foreground">{completion}%</p>
+                    <span className="text-xs text-muted-foreground">({totalPopulated}/{totalFields} fields)</span>
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="flex flex-col gap-3 justify-center min-w-[200px] z-10">
-              <Button onClick={handleDownload} className="w-full justify-start gap-2 h-12 shadow-sm">
+              <Button onClick={handleDownload} className="w-full justify-start gap-2 h-12 shadow-sm bg-[#D4523A] hover:bg-[#B83F28] text-white">
                 <Download className="w-4 h-4" />
                 Download JSON Data
               </Button>
@@ -159,8 +159,8 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetail }) {
           
           return (
             <Card key={categoryName} className="shadow-sm">
-              <CardHeader className="bg-slate-50/50 border-b border-slate-100 py-4">
-                <CardTitle className="text-lg font-sans flex items-center gap-2 text-slate-800">
+              <CardHeader className="bg-[hsl(40,20%,97%)] border-b border-border py-4">
+                <CardTitle className="text-lg font-sans flex items-center gap-2 text-foreground">
                   {categoryName.replace(/([A-Z])/g, ' $1').trim()}
                 </CardTitle>
               </CardHeader>
@@ -173,21 +173,21 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetail }) {
                       <div 
                         key={key} 
                         className={cn(
-                          "p-4 hover:bg-slate-50/50 transition-colors flex items-start gap-3",
-                          index >= 3 ? "md:border-t border-slate-100" : ""
+                          "p-4 hover:bg-[hsl(40,20%,98%)] transition-colors flex items-start gap-3",
+                          index >= 3 ? "md:border-t border-border" : ""
                         )}
                       >
                         <div className={cn(
                           "w-2 h-2 rounded-full mt-1.5 shrink-0",
-                          hasValue ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-slate-200"
+                          hasValue ? "bg-[#D4523A] shadow-[0_0_8px_rgba(212,82,58,0.35)]" : "bg-muted-foreground/20"
                         )} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-slate-500 mb-1 truncate" title={key}>
+                          <p className="text-xs font-medium text-muted-foreground mb-1 truncate" title={key}>
                             {key}
                           </p>
                           <p className={cn(
                             "text-sm break-words",
-                            hasValue ? "text-slate-900 font-medium" : "text-slate-400 italic"
+                            hasValue ? "text-foreground font-medium" : "text-muted-foreground italic"
                           )}>
                             {hasValue ? value : "Not found in document"}
                           </p>

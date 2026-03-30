@@ -13,10 +13,10 @@ export default function History() {
     <div className="w-full max-w-6xl mx-auto space-y-8 pb-20">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
         <div>
-          <h1 className="text-4xl font-serif font-bold text-slate-900 tracking-tight mb-3">
+          <h1 className="text-4xl font-serif font-bold text-foreground tracking-tight mb-3">
             Extraction History
           </h1>
-          <p className="text-slate-500 text-lg">
+          <p className="text-muted-foreground text-lg">
             Review and download previously processed SBA loan documents.
           </p>
         </div>
@@ -27,7 +27,7 @@ export default function History() {
           <input 
             type="text" 
             placeholder="Search borrowers..." 
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-border bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[#D4523A]/20 text-sm"
             disabled
           />
         </div>
@@ -43,18 +43,18 @@ export default function History() {
         <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
           {data.extractions.map((ext) => (
             <Link key={ext.id} href={`/extraction/${ext.id}`}>
-              <Card className="group cursor-pointer hover:shadow-md transition-all duration-200 border-slate-200 hover:border-primary/30 bg-white">
+              <Card className="group cursor-pointer hover:shadow-md transition-all duration-200 border-border hover:border-[#D4523A]/40 bg-white">
                 <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center gap-6">
                   
                   <div className="flex items-center gap-4 min-w-[250px]">
-                    <div className="p-3 bg-slate-100 group-hover:bg-primary/10 group-hover:text-primary transition-colors rounded-xl text-slate-500">
+                    <div className="p-3 bg-muted group-hover:bg-[#D4523A]/10 group-hover:text-[#D4523A] transition-colors rounded-xl text-muted-foreground">
                       <FileText className="w-6 h-6" />
                     </div>
                     <div>
-                      <h3 className="font-serif font-semibold text-lg text-slate-900 group-hover:text-primary transition-colors line-clamp-1">
+                      <h3 className="font-serif font-semibold text-lg text-foreground group-hover:text-[#D4523A] transition-colors line-clamp-1">
                         {ext.borrower_name || "Unknown Borrower"}
                       </h3>
-                      <p className="text-xs text-slate-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {format(parseISO(ext.created_at), "MMM d, yyyy • h:mm a")}
                       </p>
                     </div>
@@ -82,10 +82,10 @@ export default function History() {
                         {ext.has_ner_warnings && (
                           <div className="w-2 h-2 rounded-full bg-amber-500" title="Has Review Warnings" />
                         )}
-                        <p className="font-semibold text-slate-900">{Math.round(ext.completion_pct)}%</p>
+                        <p className="font-semibold text-foreground">{Math.round(ext.completion_pct)}%</p>
                       </div>
                     </div>
-                    <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">
+                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center group-hover:bg-[#D4523A] group-hover:text-white transition-colors">
                       <ArrowRight className="w-5 h-5" />
                     </div>
                   </div>

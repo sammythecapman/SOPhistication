@@ -33,7 +33,7 @@ function FileUploadZone({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <label className="text-sm font-semibold text-slate-700">
+        <label className="text-sm font-semibold text-foreground">
           {title} {required && <span className="text-destructive">*</span>}
         </label>
       </div>
@@ -44,29 +44,29 @@ function FileUploadZone({
           className={`
             border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200
             flex flex-col items-center justify-center min-h-[160px]
-            ${isDragActive ? 'border-primary bg-primary/5 scale-[1.02]' : 'border-slate-300 hover:border-primary/50 hover:bg-slate-50'}
+            ${isDragActive ? 'border-[#D4523A] bg-[#D4523A]/5 scale-[1.02]' : 'border-border hover:border-[#D4523A]/40 hover:bg-background'}
           `}
         >
           <input {...getInputProps()} />
-          <div className={`p-3 rounded-full mb-3 ${isDragActive ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500'}`}>
+          <div className={`p-3 rounded-full mb-3 ${isDragActive ? 'bg-[#D4523A] text-white' : 'bg-muted text-muted-foreground'}`}>
             <UploadCloud className="w-6 h-6" />
           </div>
-          <p className="text-sm font-medium text-slate-700 mb-1">
+          <p className="text-sm font-medium text-foreground mb-1">
             {isDragActive ? "Drop PDF here" : "Drag & drop PDF here"}
           </p>
-          <p className="text-xs text-slate-500">{description}</p>
+          <p className="text-xs text-muted-foreground">{description}</p>
         </div>
       ) : (
-        <div className="border border-slate-200 rounded-xl p-4 flex items-center justify-between bg-white shadow-sm h-[160px]">
+        <div className="border border-border rounded-xl p-4 flex items-center justify-between bg-white shadow-sm h-[160px]">
           <div className="flex items-center gap-4 overflow-hidden">
             <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg shrink-0">
               <FileCheck className="w-8 h-8" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-medium text-slate-900 truncate" title={file.name}>
+              <p className="text-sm font-medium text-foreground truncate" title={file.name}>
                 {file.name}
               </p>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5">
                 {(file.size / 1024 / 1024).toFixed(2)} MB
               </p>
             </div>
@@ -133,10 +133,10 @@ export default function Home() {
       
       {!jobId && (
         <div className="mb-10 animate-in fade-in slide-in-from-top-4 duration-500">
-          <h1 className="text-4xl font-serif font-bold text-slate-900 tracking-tight mb-3">
+          <h1 className="text-4xl font-serif font-bold text-foreground tracking-tight mb-3">
             New Document Extraction
           </h1>
-          <p className="text-slate-500 text-lg max-w-2xl">
+          <p className="text-muted-foreground text-lg max-w-2xl">
             Upload SBA Loan Terms & Conditions and optional Credit Memos. Our legal AI will extract all critical deal parameters in seconds.
           </p>
         </div>
@@ -151,7 +151,7 @@ export default function Home() {
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3 }}
           >
-            <Card className="border-0 shadow-xl shadow-slate-200/50 bg-white/60 backdrop-blur-xl">
+            <Card className="border border-border shadow-lg bg-white/80 backdrop-blur-xl">
               <CardContent className="p-8 md:p-10">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12">
                   <FileUploadZone 
@@ -171,10 +171,10 @@ export default function Home() {
                   />
                 </div>
 
-                <div className="mt-12 flex justify-end items-center pt-8 border-t border-slate-100">
+                <div className="mt-12 flex justify-end items-center pt-8 border-t border-border">
                   <Button 
                     size="lg" 
-                    className="w-full md:w-auto h-14 px-8 text-lg group bg-slate-900 hover:bg-slate-800"
+                    className="w-full md:w-auto h-14 px-8 text-lg group bg-[#D4523A] hover:bg-[#B83F28] text-white"
                     disabled={!termsFile || startMutation.isPending}
                     isLoading={startMutation.isPending}
                     onClick={handleStart}
@@ -196,20 +196,20 @@ export default function Home() {
             className="flex flex-col items-center justify-center py-20"
           >
             <div className="relative w-24 h-24 mb-8">
-              <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
-              <div className="absolute inset-0 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+              <div className="absolute inset-0 border-4 border-muted rounded-full"></div>
+              <div className="absolute inset-0 border-4 border-[#D4523A] border-t-transparent rounded-full animate-spin"></div>
               <div className="absolute inset-0 flex items-center justify-center">
-                <FileText className="w-8 h-8 text-primary animate-pulse" />
+                <FileText className="w-8 h-8 text-[#D4523A] animate-pulse" />
               </div>
             </div>
             
-            <h2 className="text-2xl font-serif font-bold text-slate-900 mb-2">Analyzing Documents</h2>
-            <p className="text-slate-500 mb-8 font-medium animate-pulse">
+            <h2 className="text-2xl font-serif font-bold text-foreground mb-2">Analyzing Documents</h2>
+            <p className="text-muted-foreground mb-8 font-medium animate-pulse">
               {jobStatus?.stage_label || "Initializing AI engine..."}
             </p>
 
-            <div className="w-full max-w-md bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <div className="flex justify-between text-sm mb-3 font-medium text-slate-700">
+            <div className="w-full max-w-md bg-white p-6 rounded-2xl shadow-sm border border-border">
+              <div className="flex justify-between text-sm mb-3 font-medium text-foreground">
                 <span>Overall Progress</span>
                 <span>{jobStatus?.progress || 0}%</span>
               </div>
@@ -225,10 +225,10 @@ export default function Home() {
           >
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-3">
-                <div className="bg-emerald-100 p-2 rounded-full">
-                  <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                <div className="bg-[#D4523A]/10 p-2 rounded-full">
+                  <CheckCircle2 className="w-6 h-6 text-[#D4523A]" />
                 </div>
-                <h1 className="text-3xl font-serif font-bold text-slate-900 tracking-tight">
+                <h1 className="text-3xl font-serif font-bold text-foreground tracking-tight">
                   Extraction Complete
                 </h1>
               </div>

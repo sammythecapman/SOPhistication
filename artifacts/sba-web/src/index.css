@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
@@ -42,35 +42,35 @@
 }
 
 :root {
-  /* Minimal Corporate / Law Firm Palette - Navy & Slate */
-  --background: 210 40% 98%; /* Slate 50 */
-  --foreground: 222 47% 11%; /* Slate 900 */
-  
-  --card: 0 0% 100%; /* White */
-  --card-foreground: 222 47% 11%;
-  --card-border: 214 32% 91%; /* Slate 200 */
+  /* Johnson Bealka, PLLC — Deep Navy + Coral/Terracotta */
+  --background: 40 20% 95%;          /* Warm cream */
+  --foreground: 220 40% 12%;         /* Deep navy text */
 
-  --primary: 222 47% 11%; /* Slate 900 - Deep Navy */
-  --primary-foreground: 210 40% 98%; /* Slate 50 */
-  
-  --secondary: 214 32% 91%; /* Slate 200 */
-  --secondary-foreground: 222 47% 11%;
-  
-  --muted: 214 32% 91%; /* Slate 200 */
-  --muted-foreground: 215 16% 47%; /* Slate 500 */
-  
-  --accent: 210 40% 96%; /* Slate 100 */
-  --accent-foreground: 222 47% 11%;
-  
+  --card: 0 0% 100%;
+  --card-foreground: 220 40% 12%;
+  --card-border: 40 15% 87%;
+
+  --primary: 220 47% 19%;            /* Deep navy (sidebar, primary) */
+  --primary-foreground: 40 20% 97%;
+
+  --secondary: 40 15% 91%;
+  --secondary-foreground: 220 40% 12%;
+
+  --muted: 40 15% 91%;
+  --muted-foreground: 220 15% 45%;
+
+  --accent: 14 62% 52%;              /* Coral / terracotta — JB brand red */
+  --accent-foreground: 0 0% 100%;
+
   --destructive: 0 84% 60%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive-foreground: 40 20% 97%;
 
-  --warning: 38 92% 50%; /* Amber 500 */
-  --warning-foreground: 48 96% 89%; /* Amber 50 */
-  
-  --border: 214 32% 91%; /* Slate 200 */
-  --input: 214 32% 91%;
-  --ring: 222 47% 11%; /* Slate 900 */
+  --warning: 38 92% 50%;
+  --warning-foreground: 48 96% 89%;
+
+  --border: 40 15% 87%;
+  --input: 40 15% 87%;
+  --ring: 14 62% 52%;                /* Coral focus ring */
 
   --radius: 0.5rem;
 }
