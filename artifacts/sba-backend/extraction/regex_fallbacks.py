@@ -15,13 +15,20 @@ def regex_extract_critical_fields(text: str) -> Dict[str, str]:
     result: Dict[str, str] = {}
 
     # ── Loan Number ──
-    # SBA Loan Number: 10-digit number, sometimes formatted with dashes
+    # Matches both "SBA Loan #", "Loan No.", "Loan Number:", straight 10-digit blocks,
+    # and common SBA dash-formatted numbers.
     loan_number_patterns = [
-        r'(?:SBA\s+)?[Ll]oan\s+[Nn]o(?:\.|\s|:)+\s*([0-9]{4}[-\s]?[0-9]{5}[-\s]?[0-9])',
-        r'(?:SBA\s+)?[Ll]oan\s+[Nn]umber\s*[:=]?\s*([0-9]{4}[-\s]?[0-9]{5}[-\s]?[0-9])',
-        r'SBA\s+[Ll]oan\s+#\s*([0-9]{4}[-\s]?[0-9]{5}[-\s]?[0-9])',
-        r'[Ll]oan\s+[Nn]o\.\s*([0-9]{10})',
-        r'\b([0-9]{4}-[0-9]{5}-[0-9]{2})\b',  # Common SBA format: XXXX-XXXXX-XX
+        # "SBA Loan # 2627876925" or "SBA Loan #2627876925"
+        r'SBA\s+[Ll]oan\s+#\s*([0-9]{8,13})',
+        # "Loan No. 2627876925" / "Loan No: ..."
+        r'(?:SBA\s+)?[Ll]oan\s+[Nn]o\.?\s*[:=]?\s*([0-9]{8,13})',
+        # "Loan Number: ..."
+        r'(?:SBA\s+)?[Ll]oan\s+[Nn]umber\s*[:=]?\s*([0-9]{8,13})',
+        # "Note No." / "Note Number"
+        r'[Nn]ote\s+[Nn]o\.?\s*[:=]?\s*([0-9]{8,13})',
+        r'[Nn]ote\s+[Nn]umber\s*[:=]?\s*([0-9]{8,13})',
+        # Common SBA dash format: XXXX-XXXXX-XX
+        r'\b([0-9]{4}-[0-9]{4,5}-[0-9]{1,2})\b',
     ]
 
     for pattern in loan_number_patterns:
@@ -30,10 +37,12 @@ def regex_extract_critical_fields(text: str) -> Dict[str, str]:
             result["LoanNumber"] = match.group(1).strip()
             break
 
-    # Also try SBA Loan Number specifically
+    # ── SBA Loan Number (distinct SBA-assigned number) ──
     sba_number_patterns = [
         r'SBA\s+[Ll]oan\s+[Nn]umber\s*[:=]?\s*([0-9\-]{8,15})',
+        r'SBA\s+[Ll]oan\s+#\s*([0-9\-]{8,15})',
         r'(?:SBA\s+)?[Aa]pproval\s+[Nn]o(?:\.|umber)?\s*[:=]?\s*([0-9\-]{8,15})',
+        r'SBA\s+[Nn]o\.?\s*[:=]?\s*([0-9\-]{8,15})',
     ]
 
     if "SBALoanNumber" not in result:

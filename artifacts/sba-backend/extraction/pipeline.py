@@ -114,6 +114,15 @@ def run_extraction_pipeline(
         if field not in raw_data or not raw_data.get(field):
             raw_data[field] = value
 
+    # ── Cascade rule: LoanNumber must never be blank if SBALoanNumber is known ──
+    # In SBA documents the SBA Loan # IS the primary loan number. If Claude or regex
+    # populated SBALoanNumber but left LoanNumber empty, propagate the value.
+    if not raw_data.get("LoanNumber") and raw_data.get("SBALoanNumber"):
+        raw_data["LoanNumber"] = raw_data["SBALoanNumber"]
+    # Reverse: if LoanNumber was found but SBALoanNumber wasn't, mirror it
+    elif not raw_data.get("SBALoanNumber") and raw_data.get("LoanNumber"):
+        raw_data["SBALoanNumber"] = raw_data["LoanNumber"]
+
     # ── Stage 5: Validate ──
     update_stage("validating", "Validating extracted data", 75)
     ner_warnings = []
