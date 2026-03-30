@@ -54,16 +54,16 @@ function categorizeFields(data: Record<string, string>) {
 function ConfidenceDot({ tier, className }: { tier?: "green" | "yellow" | "red"; className?: string }) {
   if (!tier || tier === "green") {
     return (
-      <div className={cn("w-2 h-2 rounded-full bg-[#D4523A] shadow-[0_0_8px_rgba(212,82,58,0.35)] shrink-0", className)} />
+      <div className={cn("w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)] shrink-0", className)} />
     );
   }
   if (tier === "yellow") {
     return (
-      <div className={cn("w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)] shrink-0", className)} />
+      <div className={cn("w-2 h-2 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(234,179,8,0.5)] shrink-0", className)} />
     );
   }
   return (
-    <div className={cn("w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.45)] shrink-0 animate-pulse", className)} />
+    <div className={cn("w-2 h-2 rounded-full bg-red-600 shadow-[0_0_8px_rgba(220,38,38,0.6)] shrink-0 animate-pulse", className)} />
   );
 }
 
@@ -275,13 +275,13 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetailExt })
                       <div className="flex items-center gap-2">
                         {redCount > 0 && (
                           <span className="flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-600 inline-block" />
                             {redCount} high-risk
                           </span>
                         )}
                         {yellowCount > 0 && (
-                          <span className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                          <span className="flex items-center gap-1 text-xs font-semibold text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 inline-block" />
                             {yellowCount} advisory
                           </span>
                         )}
@@ -322,13 +322,13 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetailExt })
       {Object.keys(scores).length > 0 && (
         <div className="flex items-center gap-6 px-1 text-xs text-slate-500">
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#D4523A] inline-block" /> Confirmed
+            <span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Confirmed
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> NER gap (low risk)
+            <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> NER gap (low risk)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Not found in source
+            <span className="w-2 h-2 rounded-full bg-red-600 inline-block" /> Not found in source
           </span>
         </div>
       )}
