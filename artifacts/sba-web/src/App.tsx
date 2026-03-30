@@ -9,6 +9,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import History from "@/pages/History";
 import ExtractionView from "@/pages/ExtractionView";
+import Analytics from "@/pages/Analytics";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +27,7 @@ function Router() {
         <Route path="/" component={Home} />
         <Route path="/history" component={History} />
         <Route path="/extraction/:id" component={ExtractionView} />
+        <Route path="/analytics" component={Analytics} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

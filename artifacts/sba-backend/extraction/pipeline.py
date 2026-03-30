@@ -12,10 +12,11 @@ from typing import Dict, Any, Optional, Callable
 import pdfplumber
 import anthropic
 
-from .ner_engine import load_ner_model, run_ner, merge_ner_results, format_ner_hints, validate_extraction_against_ner
+from .ner_engine import load_ner_model, run_ner, merge_ner_results, format_ner_hints
 from .schemas import analyze_deal_structure, build_schema, extract_fields
 from .formatting import apply_field_formatting
 from .regex_fallbacks import regex_extract_critical_fields
+from .confidence import score_extracted_fields
 
 
 def read_pdf(path: str) -> str:
@@ -114,11 +115,25 @@ def run_extraction_pipeline(
         if field not in raw_data or not raw_data.get(field):
             raw_data[field] = value
 
-    # ── Stage 5: Validate ──
-    update_stage("validating", "Validating extracted data", 75)
-    ner_warnings = []
+    # ── Stage 5: Confidence Scoring ──
+    update_stage("validating", "Scoring extraction confidence", 75)
+    confidence_scores: dict = {}
+    ner_warnings: list = []
     if ner_entities:
-        ner_warnings = validate_extraction_against_ner(raw_data, ner_entities)
+        try:
+            import db as _db
+            learned = _db.get_learned_suppressions()
+        except Exception:
+            learned = {}
+        confidence_scores = score_extracted_fields(
+            raw_data, ner_entities, terms_text, learned_suppressions=learned
+        )
+        # Build legacy ner_warnings list from RED scores for backward compat
+        ner_warnings = [
+            f"⛔ HALLUCINATION RISK: '{f}' value '{s['value']}' was NOT FOUND in source text."
+            for f, s in confidence_scores.items()
+            if s["confidence_tier"] == "red"
+        ]
 
     # ── Stage 6: Apply Formatting ──
     update_stage("formatting", "Applying field formatting", 90)
@@ -137,6 +152,7 @@ def run_extraction_pipeline(
         "raw_data": raw_data,
         "formatted_data": formatted_data,
         "ner_warnings": ner_warnings,
+        "confidence_scores": confidence_scores,
         "summary": {
             "fields_populated": found,
             "fields_total": total,

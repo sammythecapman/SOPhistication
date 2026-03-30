@@ -137,6 +137,7 @@ def _run_job(job_id: str, terms_path: str, memo_path, job_dir: Path):
                     "formatted_data": result.get("formatted_data") or {},
                     "raw_data": result.get("raw_data") or {},
                     "ner_warnings": result.get("ner_warnings") or [],
+                    "confidence_scores": result.get("confidence_scores") or {},
                     "fields_populated": result["summary"]["fields_populated"],
                     "fields_total": result["summary"]["fields_total"],
                     "completion_pct": result["summary"]["completion_percentage"],
@@ -235,6 +236,54 @@ def download_extraction(extraction_id: int):
             as_attachment=True,
             download_name=filename,
         )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────
+# Feedback endpoints
+# ──────────────────────────────────────────────
+
+@app.route("/api/feedback", methods=["POST"])
+def submit_feedback():
+    data = request.get_json(silent=True) or {}
+    extraction_id = data.get("extraction_id")
+    field_name = data.get("field_name")
+    extracted_value = data.get("extracted_value", "")
+    confidence_tier = data.get("confidence_tier")
+    reviewer_verdict = data.get("reviewer_verdict")
+
+    if not all([extraction_id, field_name, confidence_tier, reviewer_verdict]):
+        return jsonify({"error": "extraction_id, field_name, confidence_tier, reviewer_verdict are required"}), 400
+    if confidence_tier not in ("red", "yellow"):
+        return jsonify({"error": "confidence_tier must be 'red' or 'yellow'"}), 400
+    if reviewer_verdict not in ("correct", "incorrect"):
+        return jsonify({"error": "reviewer_verdict must be 'correct' or 'incorrect'"}), 400
+
+    try:
+        fid = db.save_feedback(extraction_id, field_name, extracted_value, confidence_tier, reviewer_verdict)
+        return jsonify({"feedback_id": fid, "message": "Feedback recorded"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────
+# Analytics endpoint
+# ──────────────────────────────────────────────
+
+@app.route("/api/analytics")
+def get_analytics():
+    try:
+        return jsonify(db.get_analytics())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/analytics/learning/<field_name>", methods=["DELETE"])
+def reset_field_learning(field_name: str):
+    try:
+        count = db.reset_field_learning(field_name)
+        return jsonify({"message": f"Cleared {count} feedback records for '{field_name}'"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

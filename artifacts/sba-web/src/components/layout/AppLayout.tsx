@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { FileText, History, Menu, X } from "lucide-react";
+import { FileText, History, BarChart3, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -10,6 +10,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: "/", label: "New Extraction", icon: FileText },
     { href: "/history", label: "Extraction History", icon: History },
+    { href: "/analytics", label: "Analytics", icon: BarChart3 },
   ];
 
   return (
