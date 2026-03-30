@@ -164,8 +164,7 @@ function FieldCard({
   return (
     <div
       className={cn(
-        "p-4 transition-colors flex items-start gap-3",
-        index >= 3 ? "md:border-t border-border" : "",
+        "p-4 transition-colors flex items-start gap-3 border-b border-r border-slate-100",
         isRed ? "bg-red-50/60 hover:bg-red-50" : isYellow ? "bg-yellow-50/40 hover:bg-yellow-50/60" : "hover:bg-[hsl(40,20%,98%)]"
       )}
     >
@@ -350,8 +349,8 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetailExt })
                   {categoryName.replace(/([A-Z])/g, " $1").trim()}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-0">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+              <CardContent className="p-0 overflow-hidden">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
                   {Object.entries(fields).map(([key, value], index) => (
                     <FieldCard
                       key={key}
