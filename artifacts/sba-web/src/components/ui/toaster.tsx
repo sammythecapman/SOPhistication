@@ -6,7 +6,7 @@ export function Toaster() {
 
   return (
     <div className="fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]">
-      {toasts.map(function ({ id, title, description, variant, ...props }) {
+      {toasts.filter(t => t.open !== false).map(function ({ id, title, description, variant }) {
         return (
           <div
             key={id}
@@ -15,7 +15,6 @@ export function Toaster() {
                 ? "bg-red-50 text-red-900 border-red-200" 
                 : "bg-white border-slate-200 text-slate-900"
             } mb-4`}
-            {...props}
           >
             <div className="grid gap-1">
               {title && <div className="text-sm font-semibold">{title}</div>}
