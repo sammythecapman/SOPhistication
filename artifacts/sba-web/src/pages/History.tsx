@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "wouter";
 import { format, parseISO } from "date-fns";
 import { FileText, ArrowRight, Search, FileSearch } from "lucide-react";
@@ -9,6 +9,19 @@ import { formatCurrency } from "@/lib/utils";
 
 export default function History() {
   const { data, isLoading } = useListExtractions({ page: 1, per_page: 50 });
+  const [query, setQuery] = useState("");
+
+  const extractions = data?.extractions ?? [];
+  const filtered = query.trim()
+    ? extractions.filter((ext) => {
+        const q = query.toLowerCase();
+        return (
+          (ext.borrower_name ?? "").toLowerCase().includes(q) ||
+          (ext.deal_type ?? "").toLowerCase().includes(q) ||
+          (ext.terms_filename ?? "").toLowerCase().includes(q)
+        );
+      })
+    : extractions;
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-8 pb-20">
@@ -22,14 +35,14 @@ export default function History() {
           </p>
         </div>
         
-        {/* Placeholder for future search */}
         <div className="relative w-full md:w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Search borrowers..." 
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search borrowers..."
             className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-border bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-[#D4523A]/20 text-sm"
-            disabled
           />
         </div>
       </div>
@@ -40,9 +53,9 @@ export default function History() {
             <Card key={i} className="h-24 animate-pulse bg-slate-100/50 border-0" />
           ))}
         </div>
-      ) : data?.extractions && data.extractions.length > 0 ? (
+      ) : filtered.length > 0 ? (
         <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
-          {data.extractions.map((ext) => (
+          {filtered.map((ext) => (
             <Link key={ext.id} href={`/extraction/${ext.id}`}>
               <Card className="group cursor-pointer hover:shadow-md transition-all duration-200 border-border hover:border-[#D4523A]/40 bg-white">
                 <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center gap-6">
@@ -95,6 +108,15 @@ export default function History() {
               </Card>
             </Link>
           ))}
+        </div>
+      ) : query.trim() ? (
+        <div className="text-center py-32 bg-white rounded-2xl border border-dashed border-slate-300">
+          <Search className="w-16 h-16 mx-auto text-slate-300 mb-4" />
+          <h3 className="text-xl font-serif font-medium text-slate-900 mb-2">No results for "{query}"</h3>
+          <p className="text-slate-500 max-w-sm mx-auto mb-6">
+            Try a different borrower name, deal type, or filename.
+          </p>
+          <Button variant="outline" onClick={() => setQuery("")}>Clear search</Button>
         </div>
       ) : (
         <div className="text-center py-32 bg-white rounded-2xl border border-dashed border-slate-300">
