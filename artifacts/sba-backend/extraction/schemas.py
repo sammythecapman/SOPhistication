@@ -62,7 +62,6 @@ def build_schema(deal: dict) -> dict:
         "SBALoanNumber":        "",
         "SBALoanName":          "",
         "SBAApprovalDate":      "",
-        "LoanNumber":           "",
         "LoanAmountShort":      "",
         "LoanAmountLong":       "",
         "LoanType":             "",
@@ -190,11 +189,8 @@ Extract the following fields and return ONLY a valid JSON object. No explanation
 {schema_str}
 
 CRITICAL FIELD RULES (these must NEVER be left blank if the data exists):
-- LoanNumber: Look for "SBA Loan #", "Loan No.", "Loan Number", "Note No.", "Note Number".
-  In SBA documents "SBA Loan #" IS the loan number — extract it here. If a separate bank/note
-  number exists use that instead, but never leave this blank when an SBA Loan # is present.
-- SBALoanNumber: Same number as above unless the document shows a distinct SBA-assigned number
-  separate from the note/loan number.
+- SBALoanNumber: Look for "SBA Loan #", "Loan No.", "Loan Number", "Note No.", "Note Number".
+  Extract any loan/note/SBA number found in the document into this field.
 
 EXTRACTION RULES:
 - Use "" (empty string) for fields genuinely not found
