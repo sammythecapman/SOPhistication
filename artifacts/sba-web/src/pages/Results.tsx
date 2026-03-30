@@ -69,7 +69,7 @@ function ConfidenceDot({ tier, hasValue, className }: {
     return <div className={cn("w-2 h-2 rounded-full bg-red-600 shadow-[0_0_8px_rgba(220,38,38,0.6)] shrink-0 animate-pulse", className)} />;
   }
   // Field has a value but isn't scored by the confidence engine (amounts, dates, etc.)
-  return <div className={cn("w-2 h-2 rounded-full bg-[#D4523A] shadow-[0_0_8px_rgba(212,82,58,0.35)] shrink-0", className)} />;
+  return <div className={cn("w-2 h-2 rounded-full bg-slate-400 shrink-0", className)} />;
 }
 
 function FeedbackButtons({
@@ -327,7 +327,10 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetailExt })
       {Object.keys(scores).length > 0 && (
         <div className="flex items-center gap-6 px-1 text-xs text-slate-500">
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Confirmed
+            <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" /> Extracted
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> NER confirmed
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> NER gap (low risk)
