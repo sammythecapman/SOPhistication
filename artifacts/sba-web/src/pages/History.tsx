@@ -4,6 +4,7 @@ import { format, parseISO } from "date-fns";
 import { FileText, ArrowRight, Search, FileSearch } from "lucide-react";
 import { useListExtractions } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 
 export default function History() {
