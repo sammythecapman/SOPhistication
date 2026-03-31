@@ -7,7 +7,6 @@ import { Download, Share2, FileCheck2, CheckCircle2, ThumbsUp, ThumbsDown, Chevr
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -91,12 +90,27 @@ function SourceFilesDropdown({
           <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-foreground transition-transform group-data-[state=open]:rotate-180" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-[260px]">
-        {files.map((f) => (
-          <DropdownMenuItem key={f.name} className="flex flex-col items-start gap-0.5 cursor-default">
-            <span className="text-xs text-muted-foreground uppercase tracking-wider">{f.label}</span>
-            <span className="text-sm font-medium text-foreground">{f.name}</span>
-          </DropdownMenuItem>
+      <DropdownMenuContent align="start" className="min-w-[280px] p-1 bg-white shadow-lg">
+        {files.map((f, i) => (
+          <button
+            key={f.name}
+            className={cn(
+              "w-full flex items-start gap-3 px-3 py-2.5 rounded-md text-left transition-colors",
+              "hover:bg-slate-50 active:bg-slate-100 cursor-pointer",
+              i < files.length - 1 ? "border-b border-slate-100" : ""
+            )}
+            onClick={() => {
+              navigator.clipboard.writeText(f.name);
+            }}
+            title="Click to copy filename"
+          >
+            <FileText className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{f.label}</p>
+              <p className="text-sm font-medium text-slate-900 leading-snug">{f.name}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Click to copy filename</p>
+            </div>
+          </button>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
