@@ -158,13 +158,22 @@ def _run_job(job_id: str, terms_path: str, memo_path, job_dir: Path):
                 },
             })
     except Exception as e:
+        error_str = str(e)
+        if "overloaded_error" in error_str or "529" in error_str:
+            friendly = "The AI service is temporarily overloaded. Please wait a moment and try again."
+        elif "401" in error_str or "authentication" in error_str.lower():
+            friendly = "API authentication error. Please check the API key configuration."
+        elif "rate_limit" in error_str or "429" in error_str:
+            friendly = "Rate limit reached. Please wait a minute before trying again."
+        else:
+            friendly = error_str
         with _job_store_lock:
             _job_store[job_id].update({
                 "status": "failed",
                 "stage": "failed",
                 "stage_label": "Failed",
                 "progress": 0,
-                "error": str(e),
+                "error": friendly,
             })
     finally:
         # Clean up uploaded files after a delay

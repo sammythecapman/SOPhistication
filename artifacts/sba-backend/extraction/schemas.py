@@ -3,7 +3,34 @@ Deal structure analysis and dynamic schema building.
 """
 
 import json
+import time
+import anthropic
 from typing import Dict
+
+
+def _claude_with_retry(client, max_retries: int = 5, **kwargs):
+    """
+    Call client.messages.create with exponential backoff on overloaded (529) errors.
+    Retries up to max_retries times with delays: 2s, 4s, 8s, 16s, 32s.
+    """
+    delay = 2
+    for attempt in range(max_retries):
+        try:
+            return client.messages.create(**kwargs)
+        except anthropic.APIStatusError as e:
+            if e.status_code == 529 and attempt < max_retries - 1:
+                print(f"⚠️  Claude overloaded (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+            else:
+                raise
+        except anthropic.APIConnectionError:
+            if attempt < max_retries - 1:
+                print(f"⚠️  Claude connection error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+            else:
+                raise
 
 
 def analyze_deal_structure(terms_text: str, memo_text: str, client) -> dict:
@@ -36,7 +63,8 @@ Return ONLY this JSON (no other text):
   "loan_program": "one of: SBA 7(a) Standard, SBA 7(a) Express, SBA 504, Conventional"
 }}"""
 
-    response = client.messages.create(
+    response = _claude_with_retry(
+        client,
         model="claude-sonnet-4-20250514",
         max_tokens=512,
         messages=[{"role": "user", "content": prompt}]
@@ -224,7 +252,8 @@ CRITICAL — LONG FORMAT FIELDS:
 
 Return ONLY the JSON object."""
 
-    response = client.messages.create(
+    response = _claude_with_retry(
+        client,
         model="claude-sonnet-4-20250514",
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}]
