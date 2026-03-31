@@ -18,7 +18,8 @@ export default function History() {
         return (
           (ext.borrower_name ?? "").toLowerCase().includes(q) ||
           (ext.deal_type ?? "").toLowerCase().includes(q) ||
-          (ext.terms_filename ?? "").toLowerCase().includes(q)
+          (ext.terms_filename ?? "").toLowerCase().includes(q) ||
+          (ext.credit_memo_filename ?? "").toLowerCase().includes(q)
         );
       })
     : extractions;
@@ -84,8 +85,17 @@ export default function History() {
                       <p className="font-medium text-slate-900">{formatCurrency(ext.loan_amount)}</p>
                     </div>
                     <div className="md:col-span-2">
-                      <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Source File</p>
-                      <p className="text-slate-700 truncate" title={ext.terms_filename}>{ext.terms_filename}</p>
+                      <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">
+                        Source {ext.credit_memo_filename ? "Files" : "File"}
+                      </p>
+                      <p className="text-slate-700 truncate text-sm" title={ext.terms_filename}>
+                        {ext.terms_filename}
+                      </p>
+                      {ext.credit_memo_filename && (
+                        <p className="text-slate-500 truncate text-sm mt-0.5" title={ext.credit_memo_filename}>
+                          + {ext.credit_memo_filename}
+                        </p>
+                      )}
                     </div>
                   </div>
 

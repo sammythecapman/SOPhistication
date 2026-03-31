@@ -3,7 +3,13 @@ import { type ExtractionDetail } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Download, Share2, FileCheck2, CheckCircle2, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Download, Share2, FileCheck2, CheckCircle2, ThumbsUp, ThumbsDown, ChevronDown, FileText } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn, formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -49,6 +55,52 @@ function categorizeFields(data: Record<string, string>) {
   });
 
   return categories;
+}
+
+function SourceFilesDropdown({
+  termsFilename,
+  creditMemoFilename,
+}: {
+  termsFilename: string;
+  creditMemoFilename: string | null;
+}) {
+  const files = [
+    { label: "Terms & Conditions", name: termsFilename },
+    ...(creditMemoFilename ? [{ label: "Credit Memo", name: creditMemoFilename }] : []),
+  ];
+
+  if (files.length === 1) {
+    return (
+      <p className="text-muted-foreground mt-1 flex items-center gap-2 text-sm">
+        <FileText className="w-4 h-4 shrink-0" />
+        <span>Source:</span>
+        <span className="font-medium text-foreground">{termsFilename}</span>
+      </p>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="text-muted-foreground mt-1 flex items-center gap-2 text-sm hover:text-foreground transition-colors group">
+          <FileText className="w-4 h-4 shrink-0" />
+          <span>Sources:</span>
+          <span className="font-medium text-foreground underline underline-offset-2 decoration-dashed decoration-slate-400">
+            {files.length} documents
+          </span>
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-foreground transition-transform group-data-[state=open]:rotate-180" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[260px]">
+        {files.map((f) => (
+          <DropdownMenuItem key={f.name} className="flex flex-col items-start gap-0.5 cursor-default">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider">{f.label}</span>
+            <span className="text-sm font-medium text-foreground">{f.name}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function ConfidenceDot({ tier, hasValue, className }: {
@@ -250,10 +302,10 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetailExt })
                 <h2 className="text-3xl font-serif font-bold text-foreground">
                   {extraction.formatted_data["Borrower1Name"] || "Unknown Borrower"}
                 </h2>
-                <p className="text-muted-foreground mt-1 flex items-center gap-2">
-                  <FileTextIcon className="w-4 h-4" />
-                  Source: <span className="font-medium text-foreground">{extraction.terms_filename}</span>
-                </p>
+                <SourceFilesDropdown
+                  termsFilename={extraction.terms_filename}
+                  creditMemoFilename={extraction.credit_memo_filename ?? null}
+                />
               </div>
 
               <div className="flex items-center gap-6 pt-2 flex-wrap">
@@ -371,16 +423,3 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetailExt })
   );
 }
 
-function FileTextIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-      <path d="M14 2v4a2 2 0 0 0 2 2h4" />
-      <path d="M10 9H8" />
-      <path d="M16 13H8" />
-      <path d="M16 17H8" />
-    </svg>
-  );
-}
