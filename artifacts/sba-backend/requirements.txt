@@ -1,4 +1,5 @@
 anthropic>=0.40.0
+cryptography>=42.0.0
 pdfplumber>=0.11.0
 spacy==3.8.11
 python-dateutil>=2.9.0

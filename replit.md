@@ -22,7 +22,15 @@ A full-stack law firm internal tool that extracts structured data from SBA loan 
 
 ### Database
 - **PostgreSQL** (Replit-provisioned) via psycopg2
-- `sba_extractions` table stores all extraction results
+- `sba_extractions` — extraction results
+- `validation_feedback` — reviewer verdicts for cumulative learning
+- `file_access_log` — full audit trail of all file token issuances and downloads
+
+### Document Security Controls (`file_security.py`)
+- **Encryption at rest** — PDFs are encrypted with Fernet (AES-128-CBC + HMAC-SHA256) before writing to `stored_files/`; key is derived from `SESSION_SECRET` via SHA-256
+- **Signed download tokens** — downloads require a time-limited (1 hour) HMAC-SHA256 signed token issued by `GET /api/extractions/{id}/files/{filename}/token`; tokens are single-purpose (tied to extraction ID + filename)
+- **Access audit log** — every token issuance and download attempt (success or failure + reason) is recorded in `file_access_log`
+- **Automatic file expiration** — a background thread deletes stored files older than `FILE_RETENTION_DAYS` days (default: 30); configurable via env var
 
 ## Extraction Pipeline (3 stages)
 

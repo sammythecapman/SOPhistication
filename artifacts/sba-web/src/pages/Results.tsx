@@ -65,25 +65,59 @@ function SourceFilesDropdown({
   termsFilename: string;
   creditMemoFilename: string | null;
 }) {
+  const { toast } = useToast();
+  const [downloading, setDownloading] = React.useState<string | null>(null);
+
   const files = [
     { label: "Terms & Conditions", name: termsFilename },
     ...(creditMemoFilename ? [{ label: "Credit Memo", name: creditMemoFilename }] : []),
   ];
 
-  const downloadUrl = (filename: string) =>
-    `/api/extractions/${extractionId}/files/${encodeURIComponent(filename)}`;
+  const handleSecureDownload = async (filename: string) => {
+    if (downloading) return;
+    setDownloading(filename);
+    try {
+      const res = await fetch(
+        `/api/extractions/${extractionId}/files/${encodeURIComponent(filename)}/token`
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "File not available");
+      }
+      const { token } = await res.json();
+      const url = `/api/extractions/${extractionId}/files/${encodeURIComponent(filename)}?token=${token}`;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Could not download file";
+      toast({
+        title: "Download unavailable",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(null);
+    }
+  };
 
   if (files.length === 1) {
     return (
-      <a
-        href={downloadUrl(termsFilename)}
-        className="text-muted-foreground mt-1 flex items-center gap-2 text-sm hover:text-[#D4523A] transition-colors group"
+      <button
+        onClick={() => handleSecureDownload(termsFilename)}
+        disabled={downloading === termsFilename}
+        className="text-muted-foreground mt-1 flex items-center gap-2 text-sm hover:text-[#D4523A] transition-colors group disabled:opacity-50"
         title="Download source PDF"
       >
         <FileText className="w-4 h-4 shrink-0" />
         <span>Source:</span>
-        <span className="font-medium text-foreground group-hover:underline underline-offset-2">{termsFilename}</span>
-      </a>
+        <span className="font-medium text-foreground group-hover:underline underline-offset-2">
+          {downloading === termsFilename ? "Downloading…" : termsFilename}
+        </span>
+      </button>
     );
   }
 
@@ -101,23 +135,25 @@ function SourceFilesDropdown({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[280px] p-1 bg-white shadow-lg">
         {files.map((f, i) => (
-          <a
+          <button
             key={f.name}
-            href={downloadUrl(f.name)}
+            onClick={() => handleSecureDownload(f.name)}
+            disabled={downloading === f.name}
             className={cn(
               "w-full flex items-start gap-3 px-3 py-2.5 rounded-md text-left transition-colors",
-              "hover:bg-slate-50 active:bg-slate-100 cursor-pointer no-underline",
+              "hover:bg-slate-50 active:bg-slate-100 disabled:opacity-50",
               i < files.length - 1 ? "border-b border-slate-100" : ""
             )}
-            title={`Download ${f.name}`}
           >
             <FileText className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
             <div>
               <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{f.label}</p>
-              <p className="text-sm font-medium text-slate-900 leading-snug hover:underline">{f.name}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">Click to download</p>
+              <p className="text-sm font-medium text-slate-900 leading-snug">{f.name}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {downloading === f.name ? "Downloading…" : "Click to download"}
+              </p>
             </div>
-          </a>
+          </button>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>

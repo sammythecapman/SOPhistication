@@ -3,19 +3,22 @@ SBA Loan Data Extraction Tool — Flask Backend
 Serves all extraction API endpoints at /api
 """
 
+import io
 import os
 import uuid
 import json
 import threading
 import shutil
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
-from datetime import datetime
 
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
 import db
+import file_security
 from extraction.pipeline import run_extraction_pipeline
 
 # ──────────────────────────────────────────────
@@ -32,6 +35,9 @@ FILES_FOLDER = Path(__file__).parent / "stored_files"
 FILES_FOLDER.mkdir(exist_ok=True)
 
 ALLOWED_EXTENSIONS = {"pdf"}
+
+# Number of days to retain stored source files before automatic deletion
+FILE_RETENTION_DAYS = int(os.environ.get("FILE_RETENTION_DAYS", "30"))
 
 # In-memory job store: job_id -> job_dict
 _job_store: dict = {}
@@ -124,13 +130,15 @@ def _run_job(job_id: str, terms_path: str, memo_path, job_dir: Path):
         # Save to database
         extraction_id = db.save_extraction(result)
 
-        # Persist uploaded PDFs so they can be downloaded later
+        # Persist encrypted copies of the uploaded PDFs for later download
         dest_dir = FILES_FOLDER / str(extraction_id)
         dest_dir.mkdir(parents=True, exist_ok=True)
         try:
-            shutil.copy2(terms_path, dest_dir / Path(terms_path).name)
+            enc_terms = dest_dir / (Path(terms_path).name + ".enc")
+            file_security.encrypt_file(terms_path, str(enc_terms))
             if memo_path and Path(memo_path).exists():
-                shutil.copy2(memo_path, dest_dir / Path(memo_path).name)
+                enc_memo = dest_dir / (Path(memo_path).name + ".enc")
+                file_security.encrypt_file(memo_path, str(enc_memo))
         except Exception as copy_err:
             print(f"⚠️  Could not persist source files for extraction {extraction_id}: {copy_err}")
 
@@ -228,19 +236,77 @@ def get_extraction(extraction_id: int):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/extractions/<int:extraction_id>/files/<path:filename>")
-def download_source_file(extraction_id: int, filename: str):
-    """Serve an original source PDF for download."""
+@app.route("/api/extractions/<int:extraction_id>/files/<path:filename>/token")
+def get_download_token(extraction_id: int, filename: str):
+    """
+    Issue a time-limited signed download token for a stored source file.
+    Tokens expire after 1 hour.
+    """
     safe_name = secure_filename(filename)
     if not safe_name:
         return jsonify({"error": "Invalid filename"}), 400
 
-    file_path = FILES_FOLDER / str(extraction_id) / safe_name
-    if not file_path.exists():
-        return jsonify({"error": "Source file not available. It may have been uploaded before file storage was enabled."}), 404
+    enc_path = FILES_FOLDER / str(extraction_id) / (safe_name + ".enc")
+    raw_path = FILES_FOLDER / str(extraction_id) / safe_name
+    if not enc_path.exists() and not raw_path.exists():
+        return jsonify({
+            "error": "Source file not available. Files from extractions before secure storage was enabled cannot be downloaded."
+        }), 404
+
+    token = file_security.generate_download_token(extraction_id, safe_name)
+    db.log_file_access(extraction_id, safe_name, "token_issued", request.remote_addr, True)
+    print(f"🔑 Download token issued — extraction={extraction_id} file={safe_name} ip={request.remote_addr}")
+    return jsonify({"token": token, "expires_in": 3600})
+
+
+@app.route("/api/extractions/<int:extraction_id>/files/<path:filename>")
+def download_source_file(extraction_id: int, filename: str):
+    """
+    Serve an original source PDF for download.
+    Requires a valid signed token issued by the /token endpoint.
+    """
+    safe_name = secure_filename(filename)
+    if not safe_name:
+        return jsonify({"error": "Invalid filename"}), 400
+
+    token = request.args.get("token", "")
+
+    # Validate signed token
+    try:
+        payload = file_security.verify_download_token(token)
+    except ValueError as e:
+        db.log_file_access(extraction_id, safe_name, "download_denied", request.remote_addr, False, str(e))
+        print(f"🚫 Download denied — extraction={extraction_id} file={safe_name} reason={e} ip={request.remote_addr}")
+        return jsonify({"error": "Invalid or expired download link. Please request a new one."}), 401
+
+    # Ensure the token was issued for exactly this file
+    if payload.get("eid") != extraction_id or payload.get("fn") != safe_name:
+        db.log_file_access(extraction_id, safe_name, "download_denied", request.remote_addr, False, "token_mismatch")
+        return jsonify({"error": "Token does not match the requested file."}), 403
+
+    # Resolve file — prefer encrypted, fall back to legacy unencrypted
+    enc_path = FILES_FOLDER / str(extraction_id) / (safe_name + ".enc")
+    raw_path = FILES_FOLDER / str(extraction_id) / safe_name
+
+    try:
+        if enc_path.exists():
+            data = file_security.decrypt_file(str(enc_path))
+        elif raw_path.exists():
+            # Legacy file stored before encryption was enabled
+            data = raw_path.read_bytes()
+        else:
+            db.log_file_access(extraction_id, safe_name, "download", request.remote_addr, False, "not_found")
+            return jsonify({"error": "Source file not available."}), 404
+    except Exception as e:
+        db.log_file_access(extraction_id, safe_name, "download", request.remote_addr, False, str(e))
+        print(f"❌ Decrypt error — extraction={extraction_id} file={safe_name}: {e}")
+        return jsonify({"error": "Could not retrieve file."}), 500
+
+    db.log_file_access(extraction_id, safe_name, "download", request.remote_addr, True)
+    print(f"✅ File downloaded — extraction={extraction_id} file={safe_name} ip={request.remote_addr}")
 
     return send_file(
-        str(file_path),
+        io.BytesIO(data),
         mimetype="application/pdf",
         as_attachment=True,
         download_name=safe_name,
@@ -273,7 +339,6 @@ def download_extraction(extraction_id: int):
         borrower = formatted.get("Borrower1Name", "extraction").replace(" ", "_")
         filename = f"SBA_Extraction_{borrower}_{extraction_id}.json"
 
-        import io
         data = json.dumps(formatted, indent=2).encode("utf-8")
         return send_file(
             io.BytesIO(data),
@@ -376,6 +441,40 @@ def push_to_sharepoint(extraction_id: int):
 
 
 # ──────────────────────────────────────────────
+# File expiration — background thread
+# ──────────────────────────────────────────────
+
+def _expire_old_files() -> None:
+    """Delete stored file sets older than FILE_RETENTION_DAYS."""
+    cutoff = datetime.now() - timedelta(days=FILE_RETENTION_DAYS)
+    expired = 0
+    try:
+        for extraction_dir in FILES_FOLDER.iterdir():
+            if not extraction_dir.is_dir():
+                continue
+            mtime = datetime.fromtimestamp(extraction_dir.stat().st_mtime)
+            if mtime < cutoff:
+                shutil.rmtree(str(extraction_dir), ignore_errors=True)
+                print(f"🗑️  Expired stored files for extraction dir: {extraction_dir.name}")
+                expired += 1
+        if expired:
+            print(f"🗑️  File expiration complete — removed {expired} old extraction set(s)")
+    except Exception as e:
+        print(f"⚠️  File expiration error: {e}")
+
+
+def _start_expiration_thread() -> None:
+    """Launch a daemon thread that runs file expiration every hour."""
+    def _loop():
+        while True:
+            time.sleep(3600)
+            _expire_old_files()
+    t = threading.Thread(target=_loop, daemon=True, name="file-expiration")
+    t.start()
+    print(f"🔒 File expiration thread started — retention: {FILE_RETENTION_DAYS} days")
+
+
+# ──────────────────────────────────────────────
 # Startup
 # ──────────────────────────────────────────────
 
@@ -386,6 +485,8 @@ if __name__ == "__main__":
         print("✅ Database initialized")
     except Exception as e:
         print(f"⚠️  Database init failed: {e}")
+
+    _start_expiration_thread()
 
     port = int(os.environ.get("PORT", 8080))
     debug = os.environ.get("NODE_ENV") != "production"

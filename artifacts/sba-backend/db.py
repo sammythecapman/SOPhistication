@@ -63,6 +63,24 @@ def init_db():
             ADD COLUMN IF NOT EXISTS confidence_scores JSONB NOT NULL DEFAULT '{}'
         """)
 
+        # ── File access audit log ──
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS file_access_log (
+                id SERIAL PRIMARY KEY,
+                extraction_id INTEGER,
+                filename TEXT NOT NULL,
+                action TEXT NOT NULL,
+                ip_address TEXT,
+                success BOOLEAN NOT NULL DEFAULT TRUE,
+                error_reason TEXT,
+                accessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_file_access_log_extraction
+            ON file_access_log (extraction_id, accessed_at DESC)
+        """)
+
         # ── Feedback table ──
         cur.execute("""
             CREATE TABLE IF NOT EXISTS validation_feedback (
@@ -166,6 +184,30 @@ def delete_extraction(extraction_id: int) -> bool:
             (extraction_id,)
         )
         return cur.fetchone() is not None
+
+
+# ──────────────────────────────────────────────
+# File access audit log
+# ──────────────────────────────────────────────
+
+def log_file_access(
+    extraction_id: int,
+    filename: str,
+    action: str,
+    ip_address: str,
+    success: bool,
+    error_reason: str = None,
+) -> None:
+    """Record a file access event to the audit log. Never raises."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                INSERT INTO file_access_log
+                    (extraction_id, filename, action, ip_address, success, error_reason)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (extraction_id, filename, action, ip_address, success, error_reason))
+    except Exception as e:
+        print(f"⚠️  Audit log write failed: {e}")
 
 
 # ──────────────────────────────────────────────
