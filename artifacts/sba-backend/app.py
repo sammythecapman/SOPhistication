@@ -28,6 +28,9 @@ CORS(app, origins="*")
 UPLOAD_FOLDER = Path(__file__).parent / "uploads"
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 
+FILES_FOLDER = Path(__file__).parent / "stored_files"
+FILES_FOLDER.mkdir(exist_ok=True)
+
 ALLOWED_EXTENSIONS = {"pdf"}
 
 # In-memory job store: job_id -> job_dict
@@ -121,6 +124,16 @@ def _run_job(job_id: str, terms_path: str, memo_path, job_dir: Path):
         # Save to database
         extraction_id = db.save_extraction(result)
 
+        # Persist uploaded PDFs so they can be downloaded later
+        dest_dir = FILES_FOLDER / str(extraction_id)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(terms_path, dest_dir / Path(terms_path).name)
+            if memo_path and Path(memo_path).exists():
+                shutil.copy2(memo_path, dest_dir / Path(memo_path).name)
+        except Exception as copy_err:
+            print(f"⚠️  Could not persist source files for extraction {extraction_id}: {copy_err}")
+
         # Mark complete
         with _job_store_lock:
             _job_store[job_id].update({
@@ -206,12 +219,35 @@ def get_extraction(extraction_id: int):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/extractions/<int:extraction_id>/files/<path:filename>")
+def download_source_file(extraction_id: int, filename: str):
+    """Serve an original source PDF for download."""
+    safe_name = secure_filename(filename)
+    if not safe_name:
+        return jsonify({"error": "Invalid filename"}), 400
+
+    file_path = FILES_FOLDER / str(extraction_id) / safe_name
+    if not file_path.exists():
+        return jsonify({"error": "Source file not available. It may have been uploaded before file storage was enabled."}), 404
+
+    return send_file(
+        str(file_path),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=safe_name,
+    )
+
+
 @app.route("/api/extractions/<int:extraction_id>", methods=["DELETE"])
 def delete_extraction(extraction_id: int):
     try:
         deleted = db.delete_extraction(extraction_id)
         if not deleted:
             return jsonify({"error": "Extraction not found"}), 404
+        # Remove stored source files
+        stored_dir = FILES_FOLDER / str(extraction_id)
+        if stored_dir.exists():
+            shutil.rmtree(str(stored_dir), ignore_errors=True)
         return jsonify({"message": "Extraction deleted successfully"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

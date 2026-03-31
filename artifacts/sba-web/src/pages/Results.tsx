@@ -57,9 +57,11 @@ function categorizeFields(data: Record<string, string>) {
 }
 
 function SourceFilesDropdown({
+  extractionId,
   termsFilename,
   creditMemoFilename,
 }: {
+  extractionId: number;
   termsFilename: string;
   creditMemoFilename: string | null;
 }) {
@@ -68,13 +70,20 @@ function SourceFilesDropdown({
     ...(creditMemoFilename ? [{ label: "Credit Memo", name: creditMemoFilename }] : []),
   ];
 
+  const downloadUrl = (filename: string) =>
+    `/api/extractions/${extractionId}/files/${encodeURIComponent(filename)}`;
+
   if (files.length === 1) {
     return (
-      <p className="text-muted-foreground mt-1 flex items-center gap-2 text-sm">
+      <a
+        href={downloadUrl(termsFilename)}
+        className="text-muted-foreground mt-1 flex items-center gap-2 text-sm hover:text-[#D4523A] transition-colors group"
+        title="Download source PDF"
+      >
         <FileText className="w-4 h-4 shrink-0" />
         <span>Source:</span>
-        <span className="font-medium text-foreground">{termsFilename}</span>
-      </p>
+        <span className="font-medium text-foreground group-hover:underline underline-offset-2">{termsFilename}</span>
+      </a>
     );
   }
 
@@ -92,25 +101,23 @@ function SourceFilesDropdown({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[280px] p-1 bg-white shadow-lg">
         {files.map((f, i) => (
-          <button
+          <a
             key={f.name}
+            href={downloadUrl(f.name)}
             className={cn(
               "w-full flex items-start gap-3 px-3 py-2.5 rounded-md text-left transition-colors",
-              "hover:bg-slate-50 active:bg-slate-100 cursor-pointer",
+              "hover:bg-slate-50 active:bg-slate-100 cursor-pointer no-underline",
               i < files.length - 1 ? "border-b border-slate-100" : ""
             )}
-            onClick={() => {
-              navigator.clipboard.writeText(f.name);
-            }}
-            title="Click to copy filename"
+            title={`Download ${f.name}`}
           >
             <FileText className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
             <div>
               <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{f.label}</p>
-              <p className="text-sm font-medium text-slate-900 leading-snug">{f.name}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">Click to copy filename</p>
+              <p className="text-sm font-medium text-slate-900 leading-snug hover:underline">{f.name}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Click to download</p>
             </div>
-          </button>
+          </a>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -317,6 +324,7 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetailExt })
                   {extraction.formatted_data["Borrower1Name"] || "Unknown Borrower"}
                 </h2>
                 <SourceFilesDropdown
+                  extractionId={extraction.id}
                   termsFilename={extraction.terms_filename}
                   creditMemoFilename={extraction.credit_memo_filename ?? null}
                 />
