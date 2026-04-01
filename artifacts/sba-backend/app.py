@@ -399,43 +399,89 @@ def reset_field_learning(field_name: str):
 
 
 # ──────────────────────────────────────────────
-# SharePoint endpoints (placeholder)
+# SharePoint endpoints
 # ──────────────────────────────────────────────
 
 @app.route("/api/sharepoint/status")
 def sharepoint_status():
-    from sharepoint.auth import SharePointAuth
-    auth = SharePointAuth()
-    return jsonify({
-        "configured": auth.is_configured,
-        "message": "SharePoint integration ready" if auth.is_configured
-        else "SharePoint credentials not configured. Set SHAREPOINT_CLIENT_ID, SHAREPOINT_CLIENT_SECRET, SHAREPOINT_TENANT_ID, and SHAREPOINT_SITE_URL environment variables.",
-    })
+    from sharepoint.factory import get_status
+    return jsonify(get_status())
 
 
 @app.route("/api/sharepoint/push/<int:extraction_id>", methods=["POST"])
 def push_to_sharepoint(extraction_id: int):
-    from sharepoint.auth import SharePointAuth
-    from sharepoint.writer import SharePointWriter
-
-    auth = SharePointAuth()
-    if not auth.is_configured:
-        return jsonify({"error": "SharePoint is not configured"}), 503
+    from sharepoint.factory import get_writer
 
     try:
         extraction = db.get_extraction(extraction_id)
         if not extraction:
             return jsonify({"error": "Extraction not found"}), 404
 
-        writer = SharePointWriter()
-        target = request.json.get("target", "folder")  # "folder" or "list"
+        writer = get_writer()
+        body = request.get_json(silent=True) or {}
+        target = body.get("target", "folder")  # "folder" or "list"
 
         if target == "list":
             result = writer.push_to_list(extraction)
         else:
             result = writer.push_to_folder(extraction)
 
-        return jsonify({"message": "Successfully pushed to SharePoint", "result": result})
+        mode = getattr(writer, "mode", "live")
+        return jsonify({
+            "message": f"Successfully pushed to SharePoint ({mode} mode)",
+            "mode": mode,
+            "result": result,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sharepoint/browse")
+def sharepoint_browse():
+    """
+    Browse the SharePoint document library.
+    Optional ?folder=<folder_id> to list files inside a specific folder.
+    Without the param, lists top-level folders.
+    """
+    from sharepoint.factory import get_reader
+
+    try:
+        reader = get_reader()
+        folder_id = request.args.get("folder")
+
+        if folder_id:
+            items = reader.list_pdfs_in_folder(folder_id)
+        else:
+            items = reader.list_folders()
+
+        return jsonify({
+            "mode": getattr(reader, "mode", "live"),
+            "folder": folder_id,
+            "items": items,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sharepoint/list-items")
+def sharepoint_list_items():
+    """
+    Return all items that have been pushed to the SharePoint List.
+    In mock mode, reads from mock_sharepoint_library/list_items.json.
+    """
+    from sharepoint.factory import get_reader
+
+    try:
+        reader = get_reader()
+        if not hasattr(reader, "list_items"):
+            return jsonify({"error": "list_items not supported in live mode yet"}), 501
+
+        items = reader.list_items()
+        return jsonify({
+            "mode": getattr(reader, "mode", "live"),
+            "count": len(items),
+            "items": items,
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

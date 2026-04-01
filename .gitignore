@@ -47,3 +47,7 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Mock SharePoint data (local dev only — not committed)
+artifacts/sba-backend/mock_sharepoint_library/*
+!artifacts/sba-backend/mock_sharepoint_library/.gitkeep
