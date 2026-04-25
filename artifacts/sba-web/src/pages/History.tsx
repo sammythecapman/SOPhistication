@@ -1,15 +1,31 @@
 import React, { useState } from "react";
 import { Link } from "wouter";
 import { format, parseISO } from "date-fns";
-import { FileText, ArrowRight, Search, FileSearch } from "lucide-react";
+import {
+  FileText,
+  ArrowRight,
+  Search,
+  FileSearch,
+  Trash2,
+} from "lucide-react";
 import { useListExtractions } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
+import { DeleteExtractionDialog } from "@/components/DeleteExtractionDialog";
+
+type PendingDelete = {
+  id: number;
+  borrowerName?: string | null;
+  termsFilename?: string | null;
+};
 
 export default function History() {
   const { data, isLoading } = useListExtractions({ page: 1, per_page: 50 });
   const [query, setQuery] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
+    null,
+  );
 
   const extractions = data?.extractions ?? [];
   const filtered = query.trim()
@@ -57,66 +73,94 @@ export default function History() {
       ) : filtered.length > 0 ? (
         <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
           {filtered.map((ext) => (
-            <Link key={ext.id} href={`/extraction/${ext.id}`}>
-              <Card className="group cursor-pointer hover:shadow-md transition-all duration-200 border-border hover:border-[#D4523A]/40 bg-white">
-                <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center gap-6">
-                  
-                  <div className="flex items-center gap-4 min-w-[250px]">
-                    <div className="p-3 bg-muted group-hover:bg-[#D4523A]/10 group-hover:text-[#D4523A] transition-colors rounded-xl text-muted-foreground">
-                      <FileText className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="font-serif font-semibold text-lg text-foreground group-hover:text-[#D4523A] transition-colors line-clamp-1">
-                        {ext.borrower_name || "Unknown Borrower"}
-                      </h3>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {format(parseISO(ext.created_at), "MMM d, yyyy • h:mm a")}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4 w-full text-sm">
-                    <div>
-                      <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Deal Type</p>
-                      <p className="font-medium text-slate-900 truncate">{ext.deal_type || "—"}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Amount</p>
-                      <p className="font-medium text-slate-900">{formatCurrency(ext.loan_amount)}</p>
-                    </div>
-                    <div className="md:col-span-2">
-                      <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">
-                        Source {ext.credit_memo_filename ? "Files" : "File"}
-                      </p>
-                      <p className="text-slate-700 truncate text-sm" title={ext.terms_filename}>
-                        {ext.terms_filename}
-                      </p>
-                      {ext.credit_memo_filename && (
-                        <p className="text-slate-500 truncate text-sm mt-0.5" title={ext.credit_memo_filename}>
-                          + {ext.credit_memo_filename}
+            <div
+              key={ext.id}
+              className="group relative flex items-stretch rounded-xl bg-white border border-border hover:border-[#D4523A]/40 hover:shadow-md transition-all duration-200"
+            >
+              <Link
+                href={`/extraction/${ext.id}`}
+                className="flex-1 cursor-pointer"
+              >
+                <Card className="border-0 shadow-none bg-transparent">
+                  <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center gap-6">
+                    
+                    <div className="flex items-center gap-4 min-w-[250px]">
+                      <div className="p-3 bg-muted group-hover:bg-[#D4523A]/10 group-hover:text-[#D4523A] transition-colors rounded-xl text-muted-foreground">
+                        <FileText className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="font-serif font-semibold text-lg text-foreground group-hover:text-[#D4523A] transition-colors line-clamp-1">
+                          {ext.borrower_name || "Unknown Borrower"}
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {format(parseISO(ext.created_at), "MMM d, yyyy • h:mm a")}
                         </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-6 md:ml-auto w-full md:w-auto mt-4 md:mt-0 pt-4 md:pt-0 border-t md:border-t-0 border-slate-100">
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Quality</p>
-                      <div className="flex items-center gap-2">
-                        {ext.has_ner_warnings && (
-                          <div className="w-2 h-2 rounded-full bg-amber-500" title="Has Review Warnings" />
-                        )}
-                        <p className="font-semibold text-foreground">{Math.round(ext.completion_pct)}%</p>
                       </div>
                     </div>
-                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center group-hover:bg-[#D4523A] group-hover:text-white transition-colors">
-                      <ArrowRight className="w-5 h-5" />
+
+                    <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4 w-full text-sm">
+                      <div>
+                        <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Deal Type</p>
+                        <p className="font-medium text-slate-900 truncate">{ext.deal_type || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Amount</p>
+                        <p className="font-medium text-slate-900">{formatCurrency(ext.loan_amount)}</p>
+                      </div>
+                      <div className="md:col-span-2">
+                        <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">
+                          Source {ext.credit_memo_filename ? "Files" : "File"}
+                        </p>
+                        <p className="text-slate-700 truncate text-sm" title={ext.terms_filename}>
+                          {ext.terms_filename}
+                        </p>
+                        {ext.credit_memo_filename && (
+                          <p className="text-slate-500 truncate text-sm mt-0.5" title={ext.credit_memo_filename}>
+                            + {ext.credit_memo_filename}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  
-                </CardContent>
-              </Card>
-            </Link>
+
+                    <div className="flex items-center gap-6 md:ml-auto w-full md:w-auto mt-4 md:mt-0 pt-4 md:pt-0 border-t md:border-t-0 border-slate-100">
+                      <div className="text-right">
+                        <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Quality</p>
+                        <div className="flex items-center gap-2">
+                          {ext.has_ner_warnings && (
+                            <div className="w-2 h-2 rounded-full bg-amber-500" title="Has Review Warnings" />
+                          )}
+                          <p className="font-semibold text-foreground">{Math.round(ext.completion_pct)}%</p>
+                        </div>
+                      </div>
+                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center group-hover:bg-[#D4523A] group-hover:text-white transition-colors">
+                        <ArrowRight className="w-5 h-5" />
+                      </div>
+                    </div>
+                    
+                  </CardContent>
+                </Card>
+              </Link>
+
+              <div className="hidden md:flex items-center pr-4">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Delete extraction for ${ext.borrower_name || ext.terms_filename}`}
+                  className="text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setPendingDelete({
+                      id: ext.id,
+                      borrowerName: ext.borrower_name,
+                      termsFilename: ext.terms_filename,
+                    });
+                  }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
           ))}
         </div>
       ) : query.trim() ? (
@@ -139,6 +183,19 @@ export default function History() {
             <Button>Start New Extraction</Button>
           </Link>
         </div>
+      )}
+
+      {pendingDelete && (
+        <DeleteExtractionDialog
+          extractionId={pendingDelete.id}
+          borrowerName={pendingDelete.borrowerName}
+          termsFilename={pendingDelete.termsFilename}
+          open={true}
+          onOpenChange={(o) => {
+            if (!o) setPendingDelete(null);
+          }}
+          onDeleted={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );

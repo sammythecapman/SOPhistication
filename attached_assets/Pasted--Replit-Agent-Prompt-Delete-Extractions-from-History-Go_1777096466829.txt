@@ -1,0 +1,142 @@
+# Replit Agent Prompt — Delete Extractions from History
+
+## Goal
+
+Let the user remove a deal from the Extraction History page. The backend endpoint and React Query mutation hook already exist — this is purely a frontend change to wire them up with a confirmation dialog and a toast.
+
+While you're in there, add the same delete affordance on the extraction detail page (`ExtractionView.tsx`) so users can also delete from inside an open extraction. Two entry points, one shared confirmation pattern.
+
+---
+
+## What's already in place (don't recreate it)
+
+- Backend: `DELETE /api/extractions/<int:extraction_id>` in `artifacts/sba-backend/app.py` (line 332). Cascades `validation_feedback` rows. Already tested.
+- Generated client hook: `useDeleteExtraction` from `@workspace/api-client-react` (in `lib/api-client-react/src/generated/api.ts` line 539). It's a React Query mutation that returns `{ mutate, mutateAsync, isPending }` and friends.
+- UI primitives already imported elsewhere in the project:
+  - `AlertDialog` family from `@/components/ui/alert-dialog`
+  - `useToast` from `@/hooks/use-toast`
+  - `lucide-react` icons (use `Trash2`)
+
+You don't need to add new dependencies, regenerate the API client, or touch the backend.
+
+---
+
+## Step 1 — Add the delete button to each row on `History.tsx`
+
+File: `artifacts/sba-web/src/pages/History.tsx`
+
+Right now each extraction is rendered as a `<Link>` wrapping a `<Card>` (lines 60–119). The whole card is the link target, which means we cannot put a clickable button inside it without click-event bubbling firing the navigation. Two ways to handle this — pick the cleaner one:
+
+**Approach A (preferred):** Move the `Trash2` icon button **outside** the `<Link>` wrapper, into a sibling element inside the row's flex container. Restructure the row so the card content is wrapped in `<Link>` and the delete button sits next to it (still visually inside the card via a flex layout). This avoids any nested-interactive-element awkwardness.
+
+**Approach B (acceptable):** Keep the structure as-is and put the button inside the card with `onClick={(e) => { e.preventDefault(); e.stopPropagation(); ... }}`. Less clean but a smaller diff.
+
+Choose A. The button should:
+
+- Sit at the far right of the card row, after the `ArrowRight` chevron block (around line 112–114). Use a small ghost-style icon button.
+- Render `<Trash2 className="w-4 h-4" />` from `lucide-react`.
+- Use the existing `<Button>` component with `variant="ghost"` and `size="icon"`.
+- Have `aria-label={`Delete extraction for ${ext.borrower_name || ext.terms_filename}`}`.
+- Be styled with `text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors` so it's visually de-emphasized until hover. Destructive actions should not look inviting.
+- Be hidden on mobile (`hidden md:inline-flex`) — the row layout already breaks differently below `md`, and a delete affordance on a small screen is too easy to mis-tap. Add a delete option to mobile in a separate change if needed; it's out of scope here.
+
+Clicking the button opens a confirmation dialog (Step 3). The button must NOT navigate to the extraction detail page.
+
+## Step 2 — Add the delete button to `ExtractionView.tsx`
+
+File: `artifacts/sba-web/src/pages/ExtractionView.tsx`
+
+Add a delete button in the page header area (wherever the existing "Download" / share / metadata controls live — read the file first to see the existing pattern). Use the same `Trash2` icon and the same hover-red-50 styling, but as a regular text-and-icon button (not icon-only), with the label "Delete":
+
+```tsx
+<Button variant="ghost" size="sm" className="text-slate-500 hover:text-red-600 hover:bg-red-50">
+  <Trash2 className="w-4 h-4 mr-2" />
+  Delete
+</Button>
+```
+
+This button opens the same confirmation dialog. On successful delete, navigate to `/history` using `wouter`'s `useLocation` hook (the project already uses `wouter` — see the `Link` import in `History.tsx`).
+
+## Step 3 — Build a shared `<DeleteExtractionDialog>` component
+
+Create `artifacts/sba-web/src/components/DeleteExtractionDialog.tsx`. This is a small wrapper around shadcn's `AlertDialog` that handles the mutation, toast, and cache invalidation. Both `History.tsx` and `ExtractionView.tsx` use it.
+
+Component contract:
+
+```tsx
+type DeleteExtractionDialogProps = {
+  extractionId: number;
+  borrowerName?: string | null;
+  termsFilename?: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDeleted?: () => void;  // called after successful delete + cache invalidation
+};
+```
+
+Behavior:
+
+1. Render an `AlertDialog` with `open` and `onOpenChange` controlled by props.
+2. Title: `"Delete this extraction?"`
+3. Description: a sentence that names the extraction so the user can confirm they're deleting the right one. Format: `"This will permanently delete the extraction for ${borrowerName || termsFilename || "this deal"}. This action cannot be undone."`
+4. Cancel button: closes the dialog. Use `<AlertDialogCancel>`.
+5. Action button: red destructive styling — `<AlertDialogAction>` with className that overrides the default to `bg-red-600 text-white hover:bg-red-700 focus:ring-red-600`. Label: `"Delete"`. Disabled while `isPending`. While pending, label changes to `"Deleting..."`.
+6. On click of the destructive action:
+   - Call `mutate(extractionId)` from `useDeleteExtraction`.
+   - On success:
+     - Show a success toast: `{ title: "Extraction deleted", description: \`Removed extraction for ${borrowerName || termsFilename || "the selected deal"}.\` }`
+     - Invalidate the React Query cache for the list endpoint so `History` refetches and the row disappears. The query key for `useListExtractions` is generated by Orval — find it via `getListExtractionsQueryKey` (or equivalent) exported from `@workspace/api-client-react`. If that helper exists, use it. If not, look at the generated hook source to find the literal key array (typically `['listExtractions', { page, per_page }]`) and invalidate by prefix using `queryClient.invalidateQueries({ queryKey: ['listExtractions'] })`.
+     - Close the dialog (`onOpenChange(false)`).
+     - Fire `onDeleted?.()`.
+   - On error:
+     - Show an error toast: `{ variant: "destructive", title: "Delete failed", description: error.message ?? "Could not delete the extraction. Please try again." }`
+     - Leave the dialog open so the user can retry or cancel.
+
+Use the existing shadcn `AlertDialog` building blocks: `AlertDialog`, `AlertDialogTrigger`, `AlertDialogContent`, `AlertDialogHeader`, `AlertDialogTitle`, `AlertDialogDescription`, `AlertDialogFooter`, `AlertDialogCancel`, `AlertDialogAction`. Don't render the trigger inside this component — the parent passes `open`/`onOpenChange` and decides where the trigger lives.
+
+## Step 4 — Wire the dialog into both pages
+
+In `History.tsx`:
+
+- Add `useState` for `deletingId: number | null` and `dialogOpen: boolean`. Or simpler: store `pendingDelete: { id: number; borrowerName?: string; termsFilename?: string } | null` and derive `open` from `pendingDelete !== null`.
+- Each row's trash button sets `pendingDelete` to the row's data.
+- Render a single `<DeleteExtractionDialog>` at the top level of the page (outside the rows loop), bound to `pendingDelete`. On `onOpenChange(false)` and on `onDeleted`, set `pendingDelete = null`.
+
+In `ExtractionView.tsx`:
+
+- Add `useState<boolean>(false)` for `dialogOpen`.
+- The header delete button sets `dialogOpen(true)`.
+- Render `<DeleteExtractionDialog>` with `extractionId`, `borrowerName`, `termsFilename` from the loaded extraction, and `onDeleted={() => setLocation("/history")}` using `wouter`'s `useLocation`.
+
+## Step 5 — Empty-state and loading consistency check
+
+After deleting the last extraction in the list, `History.tsx` should automatically render the existing "No extractions yet" empty state (lines 132–142). This should already work via React Query cache invalidation — but verify it does. If it doesn't (e.g. the empty state condition uses `extractions.length` from a stale cache), fix the data flow.
+
+If the user deletes an extraction that had a search query applied and the search now matches nothing, the existing "No results for ..." empty state should render. Same idea — should work for free, but verify.
+
+---
+
+## Acceptance criteria
+
+- A small trash icon button appears at the right edge of each row on the History page on `md+` viewports; it is hidden on mobile.
+- Clicking the trash button does NOT navigate to the extraction detail page; it opens a confirmation dialog.
+- The dialog names the specific extraction (borrower name preferred, falling back to filename) so the user can confirm.
+- The dialog has a destructive red "Delete" button and a neutral "Cancel" button.
+- Confirming triggers `useDeleteExtraction`. While pending, the button shows "Deleting..." and is disabled.
+- On success: a success toast appears, the row disappears from the list (cache invalidation), and the dialog closes.
+- On failure: a destructive toast shows the error, the dialog stays open, the user can retry.
+- The `ExtractionView` detail page has a "Delete" button in the header area that uses the same dialog.
+- After deleting from `ExtractionView`, the user is navigated back to `/history` and the row is no longer present.
+- Deleting the last extraction shows the "No extractions yet" empty state.
+- No regressions: clicking anywhere else on a History row (the card body, the chevron) still navigates to the detail page as before.
+- No backend changes were made.
+
+## Out of scope
+
+- Bulk delete / multi-select — single-row delete only.
+- Soft delete / undo / trash bin — hard delete via the existing endpoint.
+- Mobile delete UX — the icon is hidden on mobile; revisit if a user asks.
+- Permission checks — there's no auth layer in the app yet; if/when that lands, gate the button on role.
+- Logging or audit-trail entries beyond what the backend already does on `DELETE`.
+
+Commit message: `feat(history): add delete extraction with confirmation dialog`

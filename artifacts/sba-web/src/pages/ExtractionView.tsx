@@ -1,9 +1,10 @@
-import React from "react";
-import { useParams, Link } from "wouter";
+import React, { useState } from "react";
+import { useParams, Link, useLocation } from "wouter";
 import { useGetExtraction } from "@workspace/api-client-react";
 import { ResultsView } from "./Results";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DeleteExtractionDialog } from "@/components/DeleteExtractionDialog";
 
 // Optional metadata that the backend now attaches but the codegen client may
 // not yet model. Render as fine print for auditability — hide entirely on
@@ -16,6 +17,8 @@ type PromptVersions = {
 export default function ExtractionView() {
   const params = useParams();
   const id = parseInt(params.id || "0", 10);
+  const [, setLocation] = useLocation();
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const { data, isLoading, isError } = useGetExtraction(id);
 
@@ -48,11 +51,21 @@ export default function ExtractionView() {
 
   return (
     <div className="w-full max-w-5xl mx-auto pb-20">
-      <div className="mb-6">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <Link href="/history" className="inline-flex items-center text-sm font-medium text-slate-500 hover:text-primary transition-colors">
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back to History
         </Link>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-slate-500 hover:text-red-600 hover:bg-red-50"
+          onClick={() => setDialogOpen(true)}
+          aria-label="Delete extraction"
+        >
+          <Trash2 className="w-4 h-4 mr-2" />
+          Delete
+        </Button>
       </div>
       <ResultsView extraction={data} />
       {showVersions && (
@@ -61,6 +74,15 @@ export default function ExtractionView() {
           {fieldVer ?? "unknown"}
         </p>
       )}
+
+      <DeleteExtractionDialog
+        extractionId={id}
+        borrowerName={data.borrower_name}
+        termsFilename={data.terms_filename}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onDeleted={() => setLocation("/history")}
+      />
     </div>
   );
 }
