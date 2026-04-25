@@ -23,10 +23,17 @@ type FeedbackEvent = {
   created_at: string;
 };
 
+type QuoteVerification = {
+  verifiable_quotes: number;
+  unverified_quotes: number;
+  unverified_quote_rate: number | null;
+};
+
 type AnalyticsData = {
   total_extractions: number;
   total_flags: { red: number; yellow: number };
   total_reviewed: { total: number; false_positives: number; true_positives: number };
+  quote_verification?: QuoteVerification;
   field_stats: FieldStat[];
   auto_suppressions: Record<string, string>;
   recent_feedback: FeedbackEvent[];
@@ -102,6 +109,11 @@ export default function Analytics() {
     ? Math.round((data.total_reviewed.false_positives / data.total_reviewed.total) * 100)
     : null;
 
+  const qv = data.quote_verification;
+  const unverifiedRate = qv && qv.unverified_quote_rate !== null
+    ? Math.round(qv.unverified_quote_rate * 100)
+    : null;
+
   return (
     <div className="w-full max-w-6xl mx-auto space-y-8 pb-20">
       <div className="animate-in fade-in slide-in-from-top-4 duration-500">
@@ -145,6 +157,23 @@ export default function Analytics() {
           color="bg-[#D4523A]/10 text-[#D4523A]"
         />
       </div>
+
+      {/* Process-supervision: per-field quote verification rate */}
+      {qv && qv.verifiable_quotes > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in duration-500 delay-150">
+          <StatCard
+            label="Unverified Quote Rate"
+            value={unverifiedRate !== null ? `${unverifiedRate}%` : "—"}
+            sub={`${qv.unverified_quotes} of ${qv.verifiable_quotes} model quotes did not appear in source documents`}
+            icon={AlertTriangle}
+            color={
+              unverifiedRate !== null && unverifiedRate >= 10
+                ? "bg-red-50 text-red-600"
+                : "bg-emerald-50 text-emerald-600"
+            }
+          />
+        </div>
+      )}
 
       {/* Auto-suppressions */}
       {Object.keys(data.auto_suppressions).length > 0 && (

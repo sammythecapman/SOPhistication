@@ -20,3 +20,4 @@ A flat JSON object. Keys MUST be exactly the set of keys present in `{schema_str
 
 ## Changelog
 - **v1** — initial extraction from inline f-string in `schemas.py`, 2026-04-25.
+- **v2** — added per-field source citations for process supervision, 2026-04-25. The model now returns a paired `<FieldName>_source` key for every schema key containing a verbatim ≤25-word quote from the source document, which the pipeline then verifies as a literal substring of the Terms & Conditions or Credit Memo text.

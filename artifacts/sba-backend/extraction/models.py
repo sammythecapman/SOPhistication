@@ -5,11 +5,15 @@ database.
 """
 
 import logging
-from typing import Dict, Literal, Set
+from typing import Dict, Literal, Set, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
+
+# Defensive cap for source-quote length — prompt asks for ≤25 words (~150 chars)
+# but we don't trust the model. Anything longer is truncated with a "…" suffix.
+_MAX_SOURCE_QUOTE_CHARS = 200
 
 
 class DealStructure(BaseModel):
@@ -68,51 +72,98 @@ class ExtractedFields(BaseModel):
 def validate_extracted_fields(
     raw: dict,
     expected_keys: Set[str],
-) -> Dict[str, str]:
+) -> Tuple[Dict[str, str], Dict[str, str]]:
     """
     Reconcile a raw Claude field-extraction dict against the dynamic schema.
 
-    Behavior:
-    1. Unknown keys (not in `expected_keys`) are dropped with a warning log.
-       Schema drift in fields is recoverable — we don't crash the pipeline.
-    2. Non-string values are coerced via `str(v)` with a warning log.
-    3. Missing expected keys are filled with `""`.
+    The v2 field_extraction prompt asks the model to return BOTH `<key>` and
+    `<key>_source` for every schema key. This validator splits them into two
+    parallel dicts.
 
-    Returns the cleaned dict whose key set is exactly `expected_keys`.
+    Behavior:
+    1. Allowed keys are `expected_keys ∪ {f"{k}_source" for k in expected_keys}`.
+       Anything else is dropped with a warning log (recoverable schema drift).
+    2. Non-string values (in either values or sources) are coerced via `str(v)`
+       with a warning log. `None` becomes `""`.
+    3. Missing expected keys are filled with `""` in BOTH dicts.
+    4. Source quotes longer than 200 chars are truncated to 200 chars with a
+       trailing "…" and a warning log entry — defensive: the prompt asks for
+       ≤25 words but we don't trust it.
+
+    Returns:
+        (values, sources)
+        - values:  Dict[str, str], key set exactly `expected_keys`
+        - sources: Dict[str, str], key set exactly `expected_keys`
     """
     if not isinstance(raw, dict):
         raise TypeError(
             f"validate_extracted_fields expected a dict, got {type(raw).__name__}"
         )
 
-    cleaned: Dict[str, str] = {}
+    source_keys: Set[str] = {f"{k}_source" for k in expected_keys}
+    allowed: Set[str] = expected_keys | source_keys
+
+    values: Dict[str, str] = {}
+    sources: Dict[str, str] = {}
     extras: list[str] = []
-    coerced: list[str] = []
+    coerced_values: list[str] = []
+    coerced_sources: list[str] = []
+    truncated_sources: list[str] = []
 
     for k, v in raw.items():
-        if k not in expected_keys:
+        if k not in allowed:
             extras.append(k)
             continue
+
+        # Normalize value: None -> "", non-string -> str(v) with warn
         if v is None:
-            cleaned[k] = ""
+            sv = ""
         elif isinstance(v, str):
-            cleaned[k] = v
+            sv = v
         else:
-            coerced.append(k)
-            cleaned[k] = str(v)
+            sv = str(v)
+            (coerced_sources if k.endswith("_source") else coerced_values).append(k)
+
+        if k.endswith("_source"):
+            base = k[: -len("_source")]
+            # Strip whitespace first — a whitespace-only quote carries no
+            # evidence and would render as a confusing blank "Source:" line
+            # in the UI. Treat it as "no quote".
+            sv = sv.strip()
+            if len(sv) > _MAX_SOURCE_QUOTE_CHARS:
+                truncated_sources.append(base)
+                # The trailing "…" is a sentinel the pipeline's quote
+                # verifier knows to strip before substring-matching against
+                # the source document. See `_verify_quote_in_source`.
+                sv = sv[: _MAX_SOURCE_QUOTE_CHARS - 1].rstrip() + "…"
+            sources[base] = sv
+        else:
+            values[k] = sv
 
     if extras:
         logger.warning(
             "validate_extracted_fields: dropped %d unexpected key(s) from Claude: %s",
             len(extras), sorted(extras)[:20],
         )
-    if coerced:
+    if coerced_values:
         logger.warning(
             "validate_extracted_fields: coerced %d non-string value(s) to str: %s",
-            len(coerced), sorted(coerced)[:20],
+            len(coerced_values), sorted(coerced_values)[:20],
+        )
+    if coerced_sources:
+        logger.warning(
+            "validate_extracted_fields: coerced %d non-string source(s) to str: %s",
+            len(coerced_sources), sorted(coerced_sources)[:20],
+        )
+    if truncated_sources:
+        logger.warning(
+            "validate_extracted_fields: truncated %d oversize source quote(s) to %d chars: %s",
+            len(truncated_sources), _MAX_SOURCE_QUOTE_CHARS,
+            sorted(truncated_sources)[:20],
         )
 
     for k in expected_keys:
-        cleaned.setdefault(k, "")
+        values.setdefault(k, "")
+        sources.setdefault(k, "")
 
-    return cleaned
+    return values, sources

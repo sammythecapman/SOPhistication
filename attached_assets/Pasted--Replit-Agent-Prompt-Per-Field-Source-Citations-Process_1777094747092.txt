@@ -1,0 +1,148 @@
+# Replit Agent Prompt — Per-Field Source Citations (Process Supervision)
+
+## Goal
+
+Add per-field source citations to the field-extraction step. For every field Claude extracts, it must also return a short verbatim quote from the source document showing exactly where the value came from. The pipeline then verifies that the quoted text actually appears in the source PDF, surfaces the citation through the API, and renders it in the UI.
+
+This is "process supervision" — instead of only checking the final extracted value (outcome supervision, what the existing NER + source-text-match logic in `confidence.py` does), we now also check the model's stated reasoning at each field.
+
+The change must be additive: existing extractions in the database must continue to render normally. The current GREEN/YELLOW/RED tier logic in `confidence.py` is kept; this adds a new orthogonal signal.
+
+This is a v2 of the `field_extraction` prompt — do not edit `v1.txt`.
+
+---
+
+## Step 1 — Create `prompts/field_extraction/v2.txt`
+
+Copy `artifacts/sba-backend/extraction/prompts/field_extraction/v1.txt` to `v2.txt` and modify it so the model returns paired `<FieldName>_source` keys alongside every extracted value.
+
+The new prompt should specify that for every key in the schema (e.g. `Borrower1Name`), the model must also return `Borrower1Name_source` containing a verbatim ≤25-word quote from the source document showing where the value came from. If the field is genuinely not in the document, **both** `Borrower1Name` and `Borrower1Name_source` should be `""`. If the value was inferred or composed (e.g. `State` derived from a parsed address), the source should quote the relevant line and the value of `_source` should still be a literal substring of the document — not a paraphrase, not a synthesis, not a description.
+
+Add these rules to the prompt (in addition to keeping all existing rules from v1):
+
+- Every schema key must have a paired `<FieldName>_source` key in the returned JSON.
+- Source quotes must be **verbatim substrings** of the Terms & Conditions or Credit Memo document text. Do not paraphrase. Do not summarize. Do not add ellipses unless they appear in the source.
+- Source quotes must be ≤25 words (≈150 characters).
+- If a field cannot be found in the document, set both the value and the source to `""`. **Never** write things like "not found in document" or "field not present" in the source — leave it empty.
+- For composed values (e.g. inferring `State` from `BorrowerAddress2`), quote the line from which the inference was made.
+- Do not invent quotes. If you cannot find a verbatim substring that supports the value, set both value and source to `""` and let the regex fallbacks or downstream review handle it.
+
+Update the example output instructions so the JSON shape is unambiguous. The schema dictionary injected into the prompt continues to list only the value keys (not the `_source` keys); the prompt instructs the model to add the `_source` keys when responding.
+
+Update `artifacts/sba-backend/extraction/prompts/field_extraction/README.md` with a Changelog entry: `v2 — added per-field source citations for process supervision, <today's date>`.
+
+## Step 2 — Extend `validate_extracted_fields` in `extraction/models.py`
+
+The current function (in `models.py`) takes `expected_keys: Set[str]` and drops any keys not in that set. It must now also accept the paired `_source` keys.
+
+Change the behavior:
+
+1. The function now accepts both `<FieldName>` and `<FieldName>_source` for every key in `expected_keys`. Build the allowed set as `expected_keys | {f"{k}_source" for k in expected_keys}`.
+2. Returns a tuple `(values: Dict[str, str], sources: Dict[str, str])` where `values` is the existing field dict (key set exactly `expected_keys`) and `sources` is the parallel source-quote dict (key set exactly `expected_keys`, every value is a string, missing keys filled with `""`).
+3. Source quotes longer than 200 characters are truncated to 200 with a `…` suffix and a warning log entry — defensive; the prompt asks for ≤25 words but we don't trust it.
+4. `_source` values that are not strings are coerced via `str(v)` with a warning, same pattern as values.
+5. Update the docstring accordingly.
+
+The existing call site in `schemas.py` (`extract_fields`) needs to handle the new tuple shape. Return type of `extract_fields` becomes `Tuple[Dict[str, str], Dict[str, str], str]` — `(values, sources, prompt_version)`.
+
+Bump `max_tokens` in the `extract_fields` Claude call from `4096` to `8192`. Add a comment: `# Doubled for paired _source quotes per field (v2 prompt)`.
+
+## Step 3 — Update the pipeline to flow sources through
+
+In `extraction/pipeline.py`:
+
+1. Update the `extract_fields` call site to unpack the new tuple shape: `raw_data, raw_sources, field_extraction_version = extract_fields(...)`.
+2. After the regex fallback block (around line 142–146), for any field filled by the regex fallback, set its source to the literal string `"[regex_fallback]"` so downstream code can distinguish it from genuine model citations and from missing data.
+3. After confidence scoring, merge the source citations into each per-field confidence record. For every field in `confidence_scores`, add a new key `model_cited_source: str` containing the source quote (or `""` if none) and a new key `cited_source_in_document: bool | None` that's:
+   - `True` if the cited source is a literal substring (case-insensitive, whitespace-collapsed) of `terms_text` or `memo_text`.
+   - `False` if it's not.
+   - `None` if `model_cited_source` is `""` (nothing to verify) or equal to `"[regex_fallback]"`.
+
+Add a small helper function `_verify_quote_in_source(quote: str, *texts: str) -> bool | None` near the bottom of `pipeline.py`. Whitespace-collapse both sides before comparison so that line wrapping in the PDF doesn't cause spurious mismatches.
+
+For fields that have a value but **no** entry in `confidence_scores` (i.e. fields outside the `SCORED_FIELDS` set in `confidence.py` — amounts, dates, addresses), do **not** add them to `confidence_scores` just for the citation — that would change the contract of the confidence scorer. Instead, add a new top-level key `field_sources` to the pipeline result dict:
+
+```python
+"field_sources": {
+    "<FieldName>": {
+        "quote": "...",
+        "verified": True | False | None,
+    }
+}
+```
+
+This dict covers **every** populated field, including non-scored ones. Scored fields get the citation in *both* `confidence_scores` (under `model_cited_source` / `cited_source_in_document`) and `field_sources` for consistency.
+
+## Step 4 — Persist sources to the database
+
+In `db.py`:
+
+1. Add a new column to `sba_extractions`:
+   ```sql
+   ALTER TABLE sba_extractions
+   ADD COLUMN IF NOT EXISTS field_sources JSONB
+   ```
+   Add this `ALTER` next to the other idempotent column adds in `init_db`.
+2. Update `save_extraction` to persist `result.get("field_sources") or {}` as the new column value. Default to `'{}'` JSONB on insert if missing.
+3. Update `_row_to_dict` to include `field_sources: row.get("field_sources") or {}` in the returned dict.
+4. The list/summary endpoint (`_row_to_summary`) does not need to include `field_sources` — it would bloat the listing payload. Detail-only.
+
+## Step 5 — Surface sources in the UI
+
+In `artifacts/sba-web/src/pages/Results.tsx`:
+
+The page already has a region around line 364 that renders an amber confidence-warning card per field. Extend the existing per-field detail rendering to show the source quote whenever one is available. Specifically, beneath each field's value in the results display, render:
+
+- If `field_sources[FieldName]` exists and has a non-empty `quote` that is **not** the literal `"[regex_fallback]"`:
+  - A small italic "Source:" line with the quote in monospace, styled `text-xs text-muted-foreground italic font-mono` with a tight border-left in the page's primary color. Cap the rendered quote at 150 characters with a `…` suffix if longer.
+  - If `verified === false`, prepend a small red badge reading "Unverified quote" — this is the high-signal failure mode (Claude fabricated a quote that doesn't exist in the source). Use the existing `lucide-react AlertTriangle` icon at 12px.
+  - If `verified === true`, no badge — verified is the expected case and shouldn't add visual noise.
+  - If `verified === null`, render the quote normally with no badge.
+- If the source equals `"[regex_fallback]"`, render a tiny gray badge that says "Pattern-matched" instead of a quote. Don't render the quote string itself — `[regex_fallback]` is metadata, not user-facing text.
+- If no source is present (legacy rows from before this change), render nothing. Do not show "no source available" or similar — silence is correct for backward compatibility.
+
+Add a `FieldSource` TypeScript type at the top of the file mirroring the backend shape. Extend the `ExtractionDetailExt` type to include `field_sources?: Record<string, FieldSource>`.
+
+Apply the same render logic in `artifacts/sba-web/src/pages/ExtractionView.tsx` if it has its own field-rendering code; if it just reuses `Results.tsx`, no change needed.
+
+## Step 6 — Update the analytics dashboard with one new top-line stat
+
+In `artifacts/sba-web/src/pages/Analytics.tsx`, add a single new card alongside the existing flag counts: **"Unverified Quote Rate"** — the percentage of extracted fields across all extractions where `field_sources[X].verified === false`. The data already comes through on the existing analytics endpoint via the existing extractions table; if computing it requires a new SQL query in `db.get_analytics`, add one and include it in the analytics response under a new key `unverified_quote_rate: float` (0.0 to 1.0).
+
+If reading every `field_sources` JSONB in the analytics query is expensive, you can instead compute and persist a single per-extraction `unverified_quote_count INTEGER` column at save time and aggregate over that column in analytics. Either approach is fine — pick the simpler one.
+
+## Step 7 — Pin the new prompt version
+
+The pipeline currently uses `load_prompt("field_extraction")` which resolves to `"latest"`. With both `v1.txt` and `v2.txt` present, `latest` will resolve to `v2`. That is the intended behavior — we want all new extractions to use v2.
+
+Add a single comment in `schemas.py` above the `load_prompt("field_extraction")` call noting that v2 includes paired source citations and the pipeline depends on that contract.
+
+Do **not** delete `v1.txt` — it stays for audit purposes. The backfill from earlier still tags pre-versioning rows correctly, and v1 will simply never be loaded by `latest` going forward.
+
+---
+
+## Acceptance criteria
+
+- `artifacts/sba-backend/extraction/prompts/field_extraction/v2.txt` exists and includes the source-citation rules.
+- `artifacts/sba-backend/extraction/prompts/field_extraction/README.md` has a v2 changelog entry.
+- `validate_extracted_fields` returns `(values, sources)` tuples and is covered by both call sites.
+- `extract_fields` returns a 3-tuple `(values, sources, prompt_version)`. Pipeline unpacks correctly.
+- `max_tokens` for `extract_fields` is `8192`, with the explanatory comment.
+- A successful extraction's API response includes `field_sources` with one entry per populated field. Each entry has `quote: string` and `verified: boolean | null`.
+- For fields filled by `regex_extract_critical_fields`, `field_sources[X].quote === "[regex_fallback]"` and `verified === null`.
+- The `sba_extractions` table has a `field_sources JSONB` column. `init_db` is idempotent (no errors on re-run).
+- A row written before this change still loads correctly through `/api/extractions/<id>` — `field_sources` is `{}` and the UI renders cleanly with no source quotes shown.
+- The Results page renders the source line under each scored field's value when a quote is present. Unverified quotes show the red badge.
+- The Analytics page has the new "Unverified Quote Rate" card.
+- Run a real extraction against a known PDF end-to-end. Confirm: at least 80% of populated fields have non-empty quotes, the verified rate is high (≥ 90% of those quotes), and the UI renders the quotes correctly.
+- Force a verification failure for testing: temporarily edit a quote in the database to be a string that doesn't exist in the source, reload the Results page, confirm the red "Unverified quote" badge appears. Revert the edit.
+
+## Out of scope
+
+- Don't change `confidence.py`'s tier logic — GREEN/YELLOW/RED stays as-is. Citations are a parallel signal.
+- Don't add citations to the deal-analysis prompt — that's a classification step, not extractive.
+- Don't add automated tests — handled separately.
+- Don't change CORS, secrets, or the SharePoint integration.
+- Don't refactor `regex_fallbacks.py` to also produce quotes — fallbacks legitimately have no quote, the `"[regex_fallback]"` sentinel is the right answer.
+
+Commit with: `extraction: add per-field source citations (process supervision) via v2 prompt`

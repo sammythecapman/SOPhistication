@@ -173,6 +173,7 @@ def _run_job(job_id: str, terms_path: str, memo_path, job_dir: Path):
                     "raw_data": result.get("raw_data") or {},
                     "ner_warnings": result.get("ner_warnings") or [],
                     "confidence_scores": result.get("confidence_scores") or {},
+                    "field_sources": result.get("field_sources") or {},
                     "extraction_health": result.get("extraction_health") or {"degraded": False, "stage_failures": []},
                     "prompt_versions": result.get("prompt_versions"),
                     "fields_populated": result["summary"]["fields_populated"],

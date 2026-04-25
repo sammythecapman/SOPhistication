@@ -129,6 +129,10 @@ Claude's JSON output is validated at the boundary by `extraction/models.py`:
 
 Every saved extraction is tagged with the prompt versions that produced it via two new columns: `deal_analysis_prompt_version` and `field_extraction_prompt_version`. The `ExtractionView` page shows them in fine print (hidden on legacy rows). To tag pre-existing rows once after deploying this change, run `python artifacts/sba-backend/scripts/backfill_prompt_versions.py` — it's idempotent and stamps untagged rows as `pre-versioning`.
 
+## Per-field Source Citations (Process Supervision)
+
+The `field_extraction` v2 prompt requires Claude to return a paired `{Field}_source` quote for every value. The pipeline verifies each quote is a literal substring of the source documents (whitespace-collapsed, case-insensitive, ellipsis-aware for truncated quotes). Results are stored per-extraction in the new `field_sources` JSONB column (`{ quote, verified }` per field) and rendered under each field card in the UI: verified quotes get an italic monospace "Source: …" line with a terracotta border-left, fabricated quotes get a red "Unverified quote" badge, and regex-fallback fields get a small gray "Pattern-matched" pill (the literal `[regex_fallback]` sentinel is never user-visible). Analytics aggregates an "Unverified Quote Rate" across all extractions. Legacy rows render with no citations — fully backward-compatible.
+
 ## SharePoint Setup
 
 1. Register an app in Azure AD: portal.azure.com → Azure Active Directory → App registrations

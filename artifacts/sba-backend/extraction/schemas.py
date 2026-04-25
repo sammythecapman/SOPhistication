@@ -245,15 +245,23 @@ def build_schema(deal: dict) -> dict:
 def extract_fields(
     terms_text: str, memo_text: str, schema: dict, deal: dict,
     ner_hints: str, client,
-) -> Tuple[Dict[str, str], str]:
+) -> Tuple[Dict[str, str], Dict[str, str], str]:
     """
     Second Claude API call: extract all relevant fields with NER hints injected.
 
-    Returns (validated_dict, prompt_version). The validated dict is reconciled
-    against the dynamic schema (unknown keys dropped, non-strings coerced,
-    missing keys filled with "").
+    Returns (values, sources, prompt_version):
+      - values: dict reconciled against the dynamic schema (unknown keys
+        dropped, non-strings coerced, missing keys filled with "")
+      - sources: parallel dict of paired `<key>_source` quotes from the v2
+        prompt's process-supervision contract; same key set as `values`
+      - prompt_version: the version tag of the field_extraction template used
     """
     schema_str = json.dumps(schema, indent=2)
+    # NOTE: load_prompt resolves to the latest version, currently v2 — which
+    # asks the model to return paired `<FieldName>_source` keys for every
+    # schema key. The pipeline's quote-verification step depends on this
+    # contract; if you pin back to v1, source dicts will be empty and the
+    # `field_sources` UI block will disappear gracefully.
     template, prompt_version = load_prompt("field_extraction")
     prompt = template.format(
         deal_type=deal.get("deal_type", "Unknown"),
@@ -268,7 +276,8 @@ def extract_fields(
         response = _claude_with_retry(
             client,
             model="claude-sonnet-4-20250514",
-            max_tokens=4096,
+            # Doubled for paired _source quotes per field (v2 prompt)
+            max_tokens=8192,
             messages=[{"role": "user", "content": prompt}]
         )
     except Exception as e:
@@ -313,7 +322,7 @@ def extract_fields(
         )
 
     try:
-        validated = validate_extracted_fields(parsed, set(schema.keys()))
+        values, sources = validate_extracted_fields(parsed, set(schema.keys()))
     except Exception as e:
         logger.error(
             "extract_fields: validation failed: %s. Raw parsed keys: %s",
@@ -325,4 +334,4 @@ def extract_fields(
             message=f"Field-extraction output failed validation: {e}",
         )
 
-    return validated, prompt_version
+    return values, sources, prompt_version

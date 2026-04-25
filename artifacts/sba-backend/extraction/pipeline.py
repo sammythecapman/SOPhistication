@@ -4,6 +4,7 @@ Runs all stages: PDF reading → NER → deal analysis → field extraction → 
 """
 
 import os
+import re
 import json
 import logging
 from datetime import datetime
@@ -127,8 +128,9 @@ def run_extraction_pipeline(
 
     # ── Stage 4: Extract Fields ──
     update_stage("extracting_fields", "Extracting fields with AI", 50)
+    raw_sources: Dict[str, str] = {}
     try:
-        raw_data, field_extraction_version = extract_fields(
+        raw_data, raw_sources, field_extraction_version = extract_fields(
             terms_text, memo_text, schema, deal, ner_hints, client,
         )
     except ExtractionStageError as e:
@@ -138,12 +140,17 @@ def run_extraction_pipeline(
         )
         stage_failures.append(e.to_dict())
         raw_data = {}
+        raw_sources = {}
 
     # ── Apply regex fallbacks for critical fields ──
+    # Mark regex-filled fields with the sentinel "[regex_fallback]" source so
+    # downstream code (and the UI) can distinguish them from genuine model
+    # citations and from missing data.
     regex_results = regex_extract_critical_fields(terms_text)
     for field, value in regex_results.items():
         if field not in raw_data or not raw_data.get(field):
             raw_data[field] = value
+            raw_sources[field] = "[regex_fallback]"
 
     # ── Stage 5: Confidence Scoring ──
     update_stage("validating", "Scoring extraction confidence", 75)
@@ -164,6 +171,33 @@ def run_extraction_pipeline(
             for f, s in confidence_scores.items()
             if s["confidence_tier"] == "red"
         ]
+
+    # ── Source citations — process supervision ──
+    # Build the full per-field citations dict (covers every populated field,
+    # including non-scored ones like amounts/dates/addresses), then merge the
+    # subset for SCORED_FIELDS into confidence_scores so the UI's existing
+    # confidence cards can show them too.
+    field_sources: Dict[str, Dict[str, Any]] = {}
+    for field, value in raw_data.items():
+        if not value or not str(value).strip():
+            continue
+        quote = raw_sources.get(field, "") or ""
+        if quote == "[regex_fallback]":
+            verified: Optional[bool] = None
+        elif quote:
+            verified = _verify_quote_in_source(quote, terms_text, memo_text)
+        else:
+            verified = None
+        field_sources[field] = {"quote": quote, "verified": verified}
+
+    for field, entry in confidence_scores.items():
+        src = field_sources.get(field, {"quote": "", "verified": None})
+        # `model_cited_source` shows the actual quote (or "" if regex-filled
+        # / no model citation). The sentinel string isn't user-facing.
+        entry["model_cited_source"] = (
+            src["quote"] if src["quote"] != "[regex_fallback]" else ""
+        )
+        entry["cited_source_in_document"] = src["verified"]
 
     # ── Stage 6: Apply Formatting ──
     update_stage("formatting", "Applying field formatting", 90)
@@ -188,6 +222,7 @@ def run_extraction_pipeline(
         "formatted_data": formatted_data,
         "ner_warnings": ner_warnings,
         "confidence_scores": confidence_scores,
+        "field_sources": field_sources,
         "extraction_health": extraction_health,
         "prompt_versions": {
             "deal_analysis": deal_analysis_version,
@@ -200,3 +235,46 @@ def run_extraction_pipeline(
             "completion_percentage": completion_pct,
         }
     }
+
+
+# ──────────────────────────────────────────────
+# Quote-verification helper (process supervision)
+# ──────────────────────────────────────────────
+
+_WS_RE = re.compile(r"\s+")
+
+
+def _verify_quote_in_source(quote: str, *texts: str) -> Optional[bool]:
+    """
+    Check whether `quote` appears as a literal substring of any of `texts`.
+
+    Whitespace is collapsed on both sides before comparison so that PDF line
+    wrapping (which inserts arbitrary newlines mid-sentence) does not cause
+    spurious mismatches. Comparison is case-insensitive — legal documents
+    frequently mix casing in headers, signatures, and body text.
+
+    If the quote ends with the truncation sentinel "…" (added by the
+    validator when a quote exceeds 200 chars), we strip it before matching.
+    Without this, a perfectly valid but long quote would always be marked
+    unverified because the literal ellipsis is unlikely to appear verbatim
+    in a PDF.
+
+    Returns:
+      - True if the (possibly de-truncated) quote is a substring of any text
+      - False if the quote is non-empty but appears nowhere
+      - None if the quote is empty/whitespace-only (nothing to verify)
+    """
+    if not quote or not quote.strip():
+        return None
+    # Strip the ellipsis truncation marker so truncated quotes can verify.
+    needle_raw = quote[:-1] if quote.endswith("…") else quote
+    needle = _WS_RE.sub(" ", needle_raw).strip().lower()
+    if not needle:
+        return None
+    for text in texts:
+        if not text:
+            continue
+        haystack = _WS_RE.sub(" ", text).lower()
+        if needle in haystack:
+            return True
+    return False

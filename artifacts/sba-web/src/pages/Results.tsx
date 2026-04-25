@@ -20,6 +20,9 @@ type ConfidenceScore = {
   source_text_match: boolean;
   source_snippet: string | null;
   match_details: string;
+  // Process-supervision additions (v2 prompt). Older rows omit these fields.
+  model_cited_source?: string;
+  cited_source_in_document?: boolean | null;
 };
 
 type StageFailure = {
@@ -34,10 +37,59 @@ type ExtractionHealth = {
   stage_failures: StageFailure[];
 };
 
+// Per-field source citation produced by the v2 field_extraction prompt.
+// `quote` is the verbatim model citation, the literal "[regex_fallback]"
+// sentinel for fields filled by regex, or "" when the model returned no
+// quote. `verified` is True/False/null per the backend contract.
+type FieldSource = {
+  quote: string;
+  verified: boolean | null;
+};
+
 type ExtractionDetailExt = ExtractionDetail & {
   confidence_scores?: Record<string, ConfidenceScore>;
+  field_sources?: Record<string, FieldSource>;
   extraction_health?: ExtractionHealth;
 };
+
+const SOURCE_QUOTE_MAX_CHARS = 150;
+
+function truncateQuote(q: string): string {
+  if (q.length <= SOURCE_QUOTE_MAX_CHARS) return q;
+  return q.slice(0, SOURCE_QUOTE_MAX_CHARS - 1).trimEnd() + "…";
+}
+
+function FieldSourceCitation({ source }: { source: FieldSource }) {
+  // Regex-fallback sentinel: render a tiny gray pill, never the literal string.
+  if (source.quote === "[regex_fallback]") {
+    return (
+      <div className="mt-2 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+        Pattern-matched
+      </div>
+    );
+  }
+  if (!source.quote) return null;
+
+  const quote = truncateQuote(source.quote);
+  const isUnverified = source.verified === false;
+
+  return (
+    <div className="mt-2 border-l-2 border-[#D4523A] pl-2.5">
+      {isUnverified && (
+        <div className="flex items-center gap-1 mb-1 text-[10px] font-semibold uppercase tracking-wider text-red-700">
+          <AlertTriangle className="w-3 h-3" />
+          Unverified quote
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground italic font-mono break-words leading-snug">
+        <span className="not-italic font-sans font-medium text-slate-500 mr-1">
+          Source:
+        </span>
+        “{quote}”
+      </p>
+    </div>
+  );
+}
 
 const STAGE_LABELS: Record<string, string> = {
   deal_analysis: "Deal structure analysis",
@@ -316,12 +368,14 @@ function FieldCard({
   fieldKey,
   value,
   score,
+  source,
   index,
   extractionId,
 }: {
   fieldKey: string;
   value: string;
   score?: ConfidenceScore;
+  source?: FieldSource;
   index: number;
   extractionId: number;
 }) {
@@ -372,6 +426,15 @@ function FieldCard({
           </div>
         )}
 
+        {/* Per-field source citation (v2 process supervision). Renders a
+            small italic monospace quote with primary-color border-left,
+            a red "Unverified quote" badge if Claude fabricated the quote,
+            or a gray "Pattern-matched" pill for regex-filled fields.
+            Legacy rows without sources render nothing. */}
+        {hasValue && source && (
+          <FieldSourceCitation source={source} />
+        )}
+
         {showFeedback && (
           <FeedbackButtons
             extractionId={extractionId}
@@ -389,6 +452,7 @@ function FieldCard({
 export function ResultsView({ extraction }: { extraction: ExtractionDetailExt }) {
   const categories = categorizeFields(extraction.formatted_data);
   const scores = extraction.confidence_scores ?? {};
+  const fieldSources = extraction.field_sources ?? {};
   const totalPopulated = extraction.fields_populated;
   const totalFields = extraction.fields_total;
   const completion = Math.round((totalPopulated / (totalFields || 1)) * 100);
@@ -534,6 +598,7 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetailExt })
                       fieldKey={key}
                       value={value}
                       score={scores[key]}
+                      source={fieldSources[key]}
                       index={index}
                       extractionId={extraction.id}
                     />

@@ -77,6 +77,14 @@ def init_db():
             ALTER TABLE sba_extractions
             ADD COLUMN IF NOT EXISTS field_extraction_prompt_version TEXT
         """)
+        # Per-field source citations (process supervision) — every populated
+        # field has {quote, verified} where verified is True/False/None.
+        # Legacy rows (pre-v2) have NULL or {} and the UI renders them with
+        # no source line — backward-compatible by design.
+        cur.execute("""
+            ALTER TABLE sba_extractions
+            ADD COLUMN IF NOT EXISTS field_sources JSONB
+        """)
 
         # ── File access audit log ──
         cur.execute("""
@@ -132,8 +140,9 @@ def save_extraction(result: Dict[str, Any]) -> int:
                 (terms_filename, credit_memo_filename, deal_structure, raw_data,
                  formatted_data, ner_warnings, confidence_scores, extraction_health,
                  deal_analysis_prompt_version, field_extraction_prompt_version,
+                 field_sources,
                  fields_populated, fields_total, completion_pct)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             result.get("terms_filename", ""),
@@ -146,6 +155,7 @@ def save_extraction(result: Dict[str, Any]) -> int:
             json.dumps(result.get("extraction_health") or {"degraded": False, "stage_failures": []}),
             prompt_versions.get("deal_analysis"),
             prompt_versions.get("field_extraction"),
+            json.dumps(result.get("field_sources") or {}),
             summary.get("fields_populated", 0),
             summary.get("fields_total", 0),
             summary.get("completion_percentage", 0),
@@ -316,6 +326,24 @@ def get_analytics() -> Dict[str, Any]:
         cur.execute("SELECT COUNT(*) AS total FROM sba_extractions")
         total_extractions = cur.fetchone()["total"]
 
+        # ── Unverified-quote rate (process supervision) ──
+        # Aggregate over all per-field citations across all extractions.
+        # Only counts entries where `verified` is a real bool (skip nulls,
+        # which are either empty quotes or the [regex_fallback] sentinel).
+        cur.execute("""
+            SELECT
+                COUNT(*) FILTER (WHERE e.value->>'verified' IN ('true', 'false')) AS verifiable,
+                COUNT(*) FILTER (WHERE e.value->>'verified' = 'false') AS unverified
+            FROM sba_extractions x,
+                 jsonb_each(COALESCE(x.field_sources, '{}'::jsonb)) e
+        """)
+        quote_row = cur.fetchone() or {}
+        verifiable = quote_row.get("verifiable") or 0
+        unverified = quote_row.get("unverified") or 0
+        unverified_quote_rate = (
+            round(unverified / verifiable, 4) if verifiable > 0 else None
+        )
+
         # Flag counts from confidence_scores stored per extraction
         cur.execute("""
             SELECT
@@ -403,6 +431,11 @@ def get_analytics() -> Dict[str, Any]:
             "false_positives": verdict_row["false_positives"] if verdict_row else 0,
             "true_positives": verdict_row["true_positives"] if verdict_row else 0,
         },
+        "quote_verification": {
+            "verifiable_quotes": verifiable,
+            "unverified_quotes": unverified,
+            "unverified_quote_rate": unverified_quote_rate,
+        },
         "field_stats": list(field_stats.values()),
         "auto_suppressions": suppressions,
         "recent_feedback": recent_feedback,
@@ -459,6 +492,7 @@ def _row_to_dict(row) -> Dict[str, Any]:
         "raw_data": row.get("raw_data") or {},
         "ner_warnings": ner_warnings if isinstance(ner_warnings, list) else [],
         "confidence_scores": row.get("confidence_scores") or {},
+        "field_sources": row.get("field_sources") or {},
         "extraction_health": row.get("extraction_health") or {"degraded": False, "stage_failures": []},
         "prompt_versions": prompt_versions,
         "fields_populated": row["fields_populated"],
