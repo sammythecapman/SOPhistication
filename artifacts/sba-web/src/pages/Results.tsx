@@ -2,8 +2,9 @@ import React, { useState } from "react";
 import { type ExtractionDetail } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Download, Share2, FileCheck2, CheckCircle2, ThumbsUp, ThumbsDown, ChevronDown, FileText } from "lucide-react";
+import { Download, Share2, FileCheck2, CheckCircle2, ThumbsUp, ThumbsDown, ChevronDown, FileText, AlertTriangle, X } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,9 +22,70 @@ type ConfidenceScore = {
   match_details: string;
 };
 
+type StageFailure = {
+  stage: string;
+  reason: string;
+  message: string;
+  raw_excerpt?: string;
+};
+
+type ExtractionHealth = {
+  degraded: boolean;
+  stage_failures: StageFailure[];
+};
+
 type ExtractionDetailExt = ExtractionDetail & {
   confidence_scores?: Record<string, ConfidenceScore>;
+  extraction_health?: ExtractionHealth;
 };
+
+const STAGE_LABELS: Record<string, string> = {
+  deal_analysis: "Deal structure analysis",
+  field_extraction: "Field extraction",
+};
+
+const REASON_HINTS: Record<string, string> = {
+  json_decode: "the AI returned a malformed response, so the schema may be incomplete",
+  api_error: "the AI service was unreachable or returned an error",
+};
+
+function formatStageFailure(f: StageFailure): string {
+  const stage = STAGE_LABELS[f.stage] || f.stage;
+  const hint = REASON_HINTS[f.reason] || "an unexpected error occurred";
+  return `${stage} failed — ${hint}. Some fields may be missing or unreliable.`;
+}
+
+function HealthBanner({ health }: { health: ExtractionHealth }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (!health?.degraded || dismissed) return null;
+
+  return (
+    <Alert
+      role="status"
+      className="border-amber-300 bg-amber-50 text-amber-900 [&>svg]:text-amber-600 relative"
+    >
+      <AlertTriangle className="h-5 w-5" />
+      <button
+        type="button"
+        aria-label="Dismiss warning"
+        className="absolute right-3 top-3 text-amber-700 hover:text-amber-900 transition-colors"
+        onClick={() => setDismissed(true)}
+      >
+        <X className="h-4 w-4" />
+      </button>
+      <AlertTitle className="font-semibold pr-8">
+        Partial extraction — review carefully
+      </AlertTitle>
+      <AlertDescription className="text-amber-800">
+        <ul className="list-disc pl-5 space-y-1 mt-1">
+          {health.stage_failures.map((f, i) => (
+            <li key={i}>{formatStageFailure(f)}</li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
+  );
+}
 
 function categorizeFields(data: Record<string, string>) {
   const categories = {
@@ -340,6 +402,11 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetailExt })
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+      {/* Health banner — only shows when degraded */}
+      {extraction.extraction_health?.degraded && (
+        <HealthBanner health={extraction.extraction_health} />
+      )}
 
       {/* Header Summary Card */}
       <Card className="bg-gradient-to-br from-white to-[hsl(40,20%,97%)] border-border shadow-sm overflow-hidden relative">

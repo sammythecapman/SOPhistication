@@ -62,6 +62,11 @@ def init_db():
             ALTER TABLE sba_extractions
             ADD COLUMN IF NOT EXISTS confidence_scores JSONB NOT NULL DEFAULT '{}'
         """)
+        # Add extraction_health column for surfacing degraded pipeline runs
+        cur.execute("""
+            ALTER TABLE sba_extractions
+            ADD COLUMN IF NOT EXISTS extraction_health JSONB
+        """)
 
         # ── File access audit log ──
         cur.execute("""
@@ -114,9 +119,9 @@ def save_extraction(result: Dict[str, Any]) -> int:
         cur.execute("""
             INSERT INTO sba_extractions
                 (terms_filename, credit_memo_filename, deal_structure, raw_data,
-                 formatted_data, ner_warnings, confidence_scores,
+                 formatted_data, ner_warnings, confidence_scores, extraction_health,
                  fields_populated, fields_total, completion_pct)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             result.get("terms_filename", ""),
@@ -126,6 +131,7 @@ def save_extraction(result: Dict[str, Any]) -> int:
             json.dumps(result.get("formatted_data") or {}),
             json.dumps(result.get("ner_warnings") or []),
             json.dumps(result.get("confidence_scores") or {}),
+            json.dumps(result.get("extraction_health") or {"degraded": False, "stage_failures": []}),
             summary.get("fields_populated", 0),
             summary.get("fields_total", 0),
             summary.get("completion_percentage", 0),
@@ -430,6 +436,7 @@ def _row_to_dict(row) -> Dict[str, Any]:
         "raw_data": row.get("raw_data") or {},
         "ner_warnings": ner_warnings if isinstance(ner_warnings, list) else [],
         "confidence_scores": row.get("confidence_scores") or {},
+        "extraction_health": row.get("extraction_health") or {"degraded": False, "stage_failures": []},
         "fields_populated": row["fields_populated"],
         "fields_total": row["fields_total"],
         "completion_pct": float(row["completion_pct"]),

@@ -5,6 +5,7 @@ Runs all stages: PDF reading → NER → deal analysis → field extraction → 
 
 import os
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable
@@ -17,6 +18,9 @@ from .schemas import analyze_deal_structure, build_schema, extract_fields
 from .formatting import apply_field_formatting
 from .regex_fallbacks import regex_extract_critical_fields
 from .confidence import score_extracted_fields
+from .errors import ExtractionStageError
+
+logger = logging.getLogger(__name__)
 
 
 def read_pdf(path: str) -> str:
@@ -95,19 +99,35 @@ def run_extraction_pipeline(
         ner_entities = {}
         ner_hints = ""
 
+    # ── extraction_health tracking ──
+    stage_failures: list = []
+
     # ── Stage 3: Analyze Deal Structure ──
     update_stage("analyzing_deal", "Analyzing deal structure", 30)
-    deal = analyze_deal_structure(terms_text, memo_text, client)
+    try:
+        deal = analyze_deal_structure(terms_text, memo_text, client)
+    except ExtractionStageError as e:
+        logger.warning(
+            "Pipeline degraded — deal_analysis failed (%s): %s",
+            e.reason, e.message,
+        )
+        stage_failures.append(e.to_dict())
+        deal = {}
 
     # ── Build Schema ──
     schema = build_schema(deal)
 
     # ── Stage 4: Extract Fields ──
     update_stage("extracting_fields", "Extracting fields with AI", 50)
-    raw_data = extract_fields(terms_text, memo_text, schema, deal, ner_hints, client)
-
-    if not raw_data:
-        raise RuntimeError("Field extraction failed — no data returned from AI model")
+    try:
+        raw_data = extract_fields(terms_text, memo_text, schema, deal, ner_hints, client)
+    except ExtractionStageError as e:
+        logger.warning(
+            "Pipeline degraded — field_extraction failed (%s): %s",
+            e.reason, e.message,
+        )
+        stage_failures.append(e.to_dict())
+        raw_data = {}
 
     # ── Apply regex fallbacks for critical fields ──
     regex_results = regex_extract_critical_fields(terms_text)
@@ -144,6 +164,11 @@ def run_extraction_pipeline(
     total = len(formatted_data)
     completion_pct = round((found / total) * 100, 1) if total > 0 else 0.0
 
+    extraction_health = {
+        "degraded": len(stage_failures) > 0,
+        "stage_failures": stage_failures,
+    }
+
     return {
         "extracted_at": datetime.now().isoformat(),
         "terms_filename": Path(terms_path).name,
@@ -153,6 +178,7 @@ def run_extraction_pipeline(
         "formatted_data": formatted_data,
         "ner_warnings": ner_warnings,
         "confidence_scores": confidence_scores,
+        "extraction_health": extraction_health,
         "summary": {
             "fields_populated": found,
             "fields_total": total,

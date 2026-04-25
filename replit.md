@@ -99,11 +99,25 @@ lib/
 
 - `ANTHROPIC_API_KEY` — Required for Claude API calls
 - `DATABASE_URL` — Auto-provisioned by Replit
+- `SESSION_SECRET` — Required. Used to derive the file-encryption key and to sign download tokens
+- `ALLOWED_ORIGINS` — **Required for production.** Comma-separated CORS allowlist (e.g. `https://jbl-sba-data-extractor.smcapper4.repl.co,http://localhost:5173`). If unset/empty in dev, falls back to `http://localhost:5173,http://localhost:21230` — **never** `*`. The resolved list is logged at startup.
+- `FILE_RETENTION_DAYS` — Optional. Days to keep encrypted source PDFs (default: 30)
+- `SHAREPOINT_MODE` — Optional. Set to `mock` to force the mock SharePoint backend even when credentials are present
 - `SHAREPOINT_CLIENT_ID` — Optional (Azure AD app)
 - `SHAREPOINT_CLIENT_SECRET` — Optional (Azure AD secret)
 - `SHAREPOINT_TENANT_ID` — Optional (Azure AD tenant)
 - `SHAREPOINT_SITE_URL` — Optional (e.g., https://yourfirm.sharepoint.com/sites/SBALoans)
 - `SHAREPOINT_LIST_NAME` — Optional (defaults to "SBA Extractions")
+
+## Extraction Health
+
+Every extraction now carries an `extraction_health` block:
+
+```json
+{ "degraded": true|false, "stage_failures": [ { "stage": "...", "reason": "...", "message": "..." } ] }
+```
+
+If a Claude stage (`deal_analysis` or `field_extraction`) fails — malformed JSON, API error, etc. — the pipeline raises `ExtractionStageError` (defined in `extraction/errors.py`), the orchestrator records it instead of crashing, and the result is marked degraded. The frontend Results page surfaces this as an amber warning banner so reviewers know that blank fields may reflect a stage failure rather than missing data.
 
 ## SharePoint Setup
 

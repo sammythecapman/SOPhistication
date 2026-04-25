@@ -7,6 +7,7 @@ import io
 import os
 import uuid
 import json
+import logging
 import threading
 import shutil
 import time
@@ -20,13 +21,26 @@ from werkzeug.utils import secure_filename
 import db
 import file_security
 from extraction.pipeline import run_extraction_pipeline
+from extraction.errors import ExtractionStageError
 
 # ──────────────────────────────────────────────
 # App setup
 # ──────────────────────────────────────────────
 
 app = Flask(__name__)
-CORS(app, origins="*")
+
+# ── CORS allowlist ──
+# ALLOWED_ORIGINS is a comma-separated list of permitted origins.
+# If unset/empty we fall back to safe localhost dev defaults — never "*".
+_DEV_DEFAULT_ORIGINS = ["http://localhost:5173", "http://localhost:21230"]
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+if not ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS = _DEV_DEFAULT_ORIGINS
+
+CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
+app.logger.setLevel(logging.INFO)
+app.logger.info(f"CORS allowed origins: {ALLOWED_ORIGINS}")
 
 UPLOAD_FOLDER = Path(__file__).parent / "uploads"
 UPLOAD_FOLDER.mkdir(exist_ok=True)
@@ -159,6 +173,7 @@ def _run_job(job_id: str, terms_path: str, memo_path, job_dir: Path):
                     "raw_data": result.get("raw_data") or {},
                     "ner_warnings": result.get("ner_warnings") or [],
                     "confidence_scores": result.get("confidence_scores") or {},
+                    "extraction_health": result.get("extraction_health") or {"degraded": False, "stage_failures": []},
                     "fields_populated": result["summary"]["fields_populated"],
                     "fields_total": result["summary"]["fields_total"],
                     "completion_pct": result["summary"]["completion_percentage"],

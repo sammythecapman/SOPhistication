@@ -4,8 +4,13 @@ Deal structure analysis and dynamic schema building.
 
 import json
 import time
+import logging
 import anthropic
 from typing import Dict
+
+from .errors import ExtractionStageError
+
+logger = logging.getLogger(__name__)
 
 
 def _claude_with_retry(client, max_retries: int = 5, **kwargs):
@@ -19,18 +24,33 @@ def _claude_with_retry(client, max_retries: int = 5, **kwargs):
             return client.messages.create(**kwargs)
         except anthropic.APIStatusError as e:
             if e.status_code == 529 and attempt < max_retries - 1:
-                print(f"⚠️  Claude overloaded (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
+                logger.warning(
+                    "Claude overloaded (attempt %d/%d), retrying in %ds...",
+                    attempt + 1, max_retries, delay,
+                )
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
             else:
                 raise
         except anthropic.APIConnectionError:
             if attempt < max_retries - 1:
-                print(f"⚠️  Claude connection error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
+                logger.warning(
+                    "Claude connection error (attempt %d/%d), retrying in %ds...",
+                    attempt + 1, max_retries, delay,
+                )
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
             else:
                 raise
+
+
+def _strip_code_fence(raw: str) -> str:
+    """Strip ```json … ``` or ``` … ``` fences if present."""
+    if "```json" in raw:
+        raw = raw.split("```json")[1].split("```")[0]
+    elif "```" in raw:
+        raw = raw.split("```")[1].split("```")[0]
+    return raw.strip()
 
 
 def analyze_deal_structure(terms_text: str, memo_text: str, client) -> dict:
@@ -63,22 +83,39 @@ Return ONLY this JSON (no other text):
   "loan_program": "one of: SBA 7(a) Standard, SBA 7(a) Express, SBA 504, Conventional"
 }}"""
 
-    response = _claude_with_retry(
-        client,
-        model="claude-sonnet-4-20250514",
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}]
-    )
+    try:
+        response = _claude_with_retry(
+            client,
+            model="claude-sonnet-4-20250514",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}]
+        )
+    except Exception as e:
+        logger.error(
+            "analyze_deal_structure: Claude API error: %s", e, exc_info=True,
+        )
+        raise ExtractionStageError(
+            stage="deal_analysis",
+            reason="api_error",
+            message=f"Anthropic API call failed: {e}",
+        )
 
     raw = response.content[0].text
+    cleaned = _strip_code_fence(raw)
     try:
-        if "```json" in raw:
-            raw = raw.split("```json")[1].split("```")[0]
-        elif "```" in raw:
-            raw = raw.split("```")[1].split("```")[0]
-        return json.loads(raw.strip())
-    except Exception:
-        return {}
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        excerpt = raw[:500] if raw else ""
+        logger.error(
+            "analyze_deal_structure: JSON decode failed (%s). Raw excerpt: %r",
+            e, excerpt,
+        )
+        raise ExtractionStageError(
+            stage="deal_analysis",
+            reason="json_decode",
+            message=f"Claude returned malformed JSON for deal analysis: {e}",
+            raw_excerpt=excerpt,
+        )
 
 
 def build_schema(deal: dict) -> dict:
@@ -252,19 +289,36 @@ CRITICAL — LONG FORMAT FIELDS:
 
 Return ONLY the JSON object."""
 
-    response = _claude_with_retry(
-        client,
-        model="claude-sonnet-4-20250514",
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}]
-    )
+    try:
+        response = _claude_with_retry(
+            client,
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}]
+        )
+    except Exception as e:
+        logger.error(
+            "extract_fields: Claude API error: %s", e, exc_info=True,
+        )
+        raise ExtractionStageError(
+            stage="field_extraction",
+            reason="api_error",
+            message=f"Anthropic API call failed: {e}",
+        )
 
     raw = response.content[0].text
+    cleaned = _strip_code_fence(raw)
     try:
-        if "```json" in raw:
-            raw = raw.split("```json")[1].split("```")[0]
-        elif "```" in raw:
-            raw = raw.split("```")[1].split("```")[0]
-        return json.loads(raw.strip())
-    except Exception:
-        return {}
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        excerpt = raw[:500] if raw else ""
+        logger.error(
+            "extract_fields: JSON decode failed (%s). Raw excerpt: %r",
+            e, excerpt,
+        )
+        raise ExtractionStageError(
+            stage="field_extraction",
+            reason="json_decode",
+            message=f"Claude returned malformed JSON for field extraction: {e}",
+            raw_excerpt=excerpt,
+        )
