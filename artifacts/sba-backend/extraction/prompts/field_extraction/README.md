@@ -21,3 +21,6 @@ A flat JSON object. Keys MUST be exactly the set of keys present in `{schema_str
 ## Changelog
 - **v1** — initial extraction from inline f-string in `schemas.py`, 2026-04-25.
 - **v2** — added per-field source citations for process supervision, 2026-04-25. The model now returns a paired `<FieldName>_source` key for every schema key containing a verbatim ≤25-word quote from the source document, which the pipeline then verifies as a literal substring of the Terms & Conditions or Credit Memo text.
+- **v3** — relaxed the strict-verbatim contract in two ways, 2026-04-25:
+  1. Description fields (`Borrower*Description`, `LenderDescription`, `SellerDescription`) may now be **inferred** from clear contextual evidence (entity-name suffix + address state). The `_source` for an inferred description is the verbatim quote that served as the BASIS for the inference (typically the address line proving the state). Inference is **not** permitted for any other field type — those still require a verbatim quote.
+  2. Encouraged value-only quotes for label/value layouts. Quoting `"Pierpoint Bank"` is preferred over inventing punctuation like `"Lender: Pierpoint Bank"` that may not exist verbatim in the PDF text. Pairs with the value-fallback added to the pipeline's verifier.

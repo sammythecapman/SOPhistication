@@ -185,7 +185,9 @@ def run_extraction_pipeline(
         if quote == "[regex_fallback]":
             verified: Optional[bool] = None
         elif quote:
-            verified = _verify_quote_in_source(quote, terms_text, memo_text)
+            verified = _verify_quote_in_source(
+                quote, str(value), terms_text, memo_text,
+            )
         else:
             verified = None
         field_sources[field] = {"quote": quote, "verified": verified}
@@ -244,37 +246,62 @@ def run_extraction_pipeline(
 _WS_RE = re.compile(r"\s+")
 
 
-def _verify_quote_in_source(quote: str, *texts: str) -> Optional[bool]:
-    """
-    Check whether `quote` appears as a literal substring of any of `texts`.
-
-    Whitespace is collapsed on both sides before comparison so that PDF line
-    wrapping (which inserts arbitrary newlines mid-sentence) does not cause
-    spurious mismatches. Comparison is case-insensitive — legal documents
-    frequently mix casing in headers, signatures, and body text.
-
-    If the quote ends with the truncation sentinel "…" (added by the
-    validator when a quote exceeds 200 chars), we strip it before matching.
-    Without this, a perfectly valid but long quote would always be marked
-    unverified because the literal ellipsis is unlikely to appear verbatim
-    in a PDF.
-
-    Returns:
-      - True if the (possibly de-truncated) quote is a substring of any text
-      - False if the quote is non-empty but appears nowhere
-      - None if the quote is empty/whitespace-only (nothing to verify)
-    """
-    if not quote or not quote.strip():
-        return None
-    # Strip the ellipsis truncation marker so truncated quotes can verify.
-    needle_raw = quote[:-1] if quote.endswith("…") else quote
-    needle = _WS_RE.sub(" ", needle_raw).strip().lower()
+def _substring_after_collapse(needle: str, *texts: str) -> bool:
+    """Whitespace-collapsed, case-insensitive substring check across texts."""
     if not needle:
-        return None
+        return False
+    n = _WS_RE.sub(" ", needle).strip().lower()
+    if not n:
+        return False
     for text in texts:
         if not text:
             continue
         haystack = _WS_RE.sub(" ", text).lower()
-        if needle in haystack:
+        if n in haystack:
             return True
+    return False
+
+
+def _verify_quote_in_source(
+    quote: str, value: str, *texts: str,
+) -> Optional[bool]:
+    """
+    Check whether the model's citation is supported by the source documents.
+
+    Performs a two-tier substring check, both whitespace-collapsed and
+    case-insensitive (PDF line wrapping and inconsistent casing in legal
+    documents would otherwise cause spurious mismatches):
+
+      Tier 1 — exact citation: does `quote` appear in any of `texts`?
+      Tier 2 — value fallback: does `value` (the extracted datum, with the
+               citation's label/punctuation stripped away) appear in any of
+               `texts`?
+
+    The fallback is necessary because models routinely paraphrase table
+    cells in their citations — e.g. quoting `"Lender: Pierpoint Bank"`
+    when the PDF actually renders it as `"Lender    Pierpoint Bank"` (tab
+    or column-aligned). Without the fallback, every such field would be
+    falsely marked Unverified Quote even though the underlying datum is
+    clearly supported.
+
+    If the quote ends with the truncation sentinel "…" (added by the
+    validator when a quote exceeds 200 chars), we strip it before matching.
+
+    Returns:
+      - True  if either tier matches
+      - False if the quote is non-empty AND neither tier matches
+      - None  if the quote is empty/whitespace-only (nothing to verify)
+    """
+    if not quote or not quote.strip():
+        return None
+    # Strip the ellipsis truncation marker so truncated quotes can verify.
+    quote_stripped = quote[:-1] if quote.endswith("…") else quote
+    if _substring_after_collapse(quote_stripped, *texts):
+        return True
+    # Fallback: the model often paraphrases citations; if the actual
+    # extracted value is a substring of the source, the citation is
+    # considered supported (even if the model wrote it with extra label
+    # punctuation or surrounding whitespace).
+    if value and value.strip() and _substring_after_collapse(value, *texts):
+        return True
     return False
