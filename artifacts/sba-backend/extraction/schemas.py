@@ -1,14 +1,23 @@
 """
 Deal structure analysis and dynamic schema building.
+
+The actual prompt text lives in `extraction/prompts/<name>/vN.txt` and is
+loaded via `prompts.registry.load_prompt`. This module is responsible only
+for orchestrating the call, parsing/validating the response (Pydantic), and
+returning the (data, prompt_version) tuple to the pipeline.
 """
 
 import json
 import time
 import logging
 import anthropic
-from typing import Dict
+from typing import Dict, Tuple
+
+from pydantic import ValidationError
 
 from .errors import ExtractionStageError
+from .models import DealStructure, validate_extracted_fields
+from .prompts.registry import load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -53,35 +62,20 @@ def _strip_code_fence(raw: str) -> str:
     return raw.strip()
 
 
-def analyze_deal_structure(terms_text: str, memo_text: str, client) -> dict:
+def analyze_deal_structure(
+    terms_text: str, memo_text: str, client
+) -> Tuple[dict, str]:
     """
     First Claude API call: figure out the deal type and structure
     so we only extract applicable fields in the next step.
+
+    Returns (deal_dict, prompt_version).
     """
-    prompt = f"""Analyze these SBA loan documents and identify the deal structure.
-
-TERMS & CONDITIONS:
-{terms_text[:4000]}
-
-CREDIT MEMO (if available):
-{memo_text[:2000] if memo_text else "Not provided"}
-
-Return ONLY this JSON (no other text):
-{{
-  "deal_type": "one of: Asset Purchase, Stock Purchase, Real Estate Purchase, Construction, Equipment, Working Capital, Refinance, Other",
-  "has_real_estate": true or false,
-  "has_construction": true or false,
-  "has_equipment": true or false,
-  "has_seller": true or false,
-  "has_landlord_lease": true or false,
-  "borrower_count": 1,
-  "has_second_borrower": true or false,
-  "has_personal_guarantors": true or false,
-  "personal_guarantor_count": 0,
-  "has_corporate_guarantors": true or false,
-  "corporate_guarantor_count": 0,
-  "loan_program": "one of: SBA 7(a) Standard, SBA 7(a) Express, SBA 504, Conventional"
-}}"""
+    template, prompt_version = load_prompt("deal_analysis")
+    prompt = template.format(
+        terms_text=terms_text[:4000],
+        memo_text=memo_text[:2000] if memo_text else "Not provided",
+    )
 
     try:
         response = _claude_with_retry(
@@ -103,7 +97,7 @@ Return ONLY this JSON (no other text):
     raw = response.content[0].text
     cleaned = _strip_code_fence(raw)
     try:
-        return json.loads(cleaned)
+        parsed = json.loads(cleaned)
     except json.JSONDecodeError as e:
         excerpt = raw[:500] if raw else ""
         logger.error(
@@ -116,6 +110,25 @@ Return ONLY this JSON (no other text):
             message=f"Claude returned malformed JSON for deal analysis: {e}",
             raw_excerpt=excerpt,
         )
+
+    try:
+        validated = DealStructure.model_validate(parsed)
+    except ValidationError as e:
+        # Log full details server-side, surface a sanitized message to callers.
+        logger.error(
+            "analyze_deal_structure: Pydantic validation failed. Errors: %s. Raw parsed: %r",
+            e.errors(), parsed,
+        )
+        raise ExtractionStageError(
+            stage="deal_analysis",
+            reason="schema_validation",
+            message=(
+                "Claude returned a deal-analysis JSON object that did not match "
+                f"the expected schema ({len(e.errors())} validation error(s))."
+            ),
+        )
+
+    return validated.model_dump(), prompt_version
 
 
 def build_schema(deal: dict) -> dict:
@@ -229,65 +242,27 @@ def build_schema(deal: dict) -> dict:
     return fields
 
 
-def extract_fields(terms_text: str, memo_text: str, schema: dict, deal: dict,
-                   ner_hints: str, client) -> dict:
+def extract_fields(
+    terms_text: str, memo_text: str, schema: dict, deal: dict,
+    ner_hints: str, client,
+) -> Tuple[Dict[str, str], str]:
     """
     Second Claude API call: extract all relevant fields with NER hints injected.
+
+    Returns (validated_dict, prompt_version). The validated dict is reconciled
+    against the dynamic schema (unknown keys dropped, non-strings coerced,
+    missing keys filled with "").
     """
     schema_str = json.dumps(schema, indent=2)
-
-    prompt = f"""You are a paralegal extracting data from SBA loan documents for a law firm.
-
-DEAL TYPE: {deal.get('deal_type', 'Unknown')}
-LOAN PROGRAM: {deal.get('loan_program', 'Unknown')}
-
-{ner_hints}
-
-TERMS & CONDITIONS DOCUMENT:
-{terms_text}
-
-CREDIT MEMO (if available):
-{memo_text if memo_text else "Not provided"}
-
-Extract the following fields and return ONLY a valid JSON object. No explanation, no markdown.
-
-{schema_str}
-
-CRITICAL FIELD RULES (these must NEVER be left blank if the data exists):
-- SBALoanNumber: Look for "SBA Loan #", "Loan No.", "Loan Number", "Note No.", "Note Number".
-  Extract any loan/note/SBA number found in the document into this field.
-
-EXTRACTION RULES:
-- Use "" (empty string) for fields genuinely not found
-- NEVER make up or guess values
-- Dates: extract as found (MM/DD/YYYY, written format, etc.) — will be formatted later
-- Amount fields ending in "Short": extract numeric values ONLY (e.g. "4342000.00", no $ or commas)
-- Amount fields ending in "Long": extract COMPLETE written format as it appears in document
-- Rate fields ending in "Short": extract numeric values ONLY (e.g. "4.25", no % sign)
-- Rate fields ending in "Long": extract written format (e.g. "Four and 25/100")
-- PersonalGuarantor fields: full legal name as it appears
-- CompanyGuarantor fields: full legal entity name
-- Borrower1Description: entity type e.g. "a Wisconsin corporation"
-- LenderDescription: entity type e.g. "a New York state chartered bank"
-- BorrowerAddress1: street address only
-- BorrowerAddress2: city, state, zip
-- LenderAddress1: street address only
-- LenderAddress2: city, state, zip
-- State: the state where the deal is primarily located
-
-SELLER FIELDS (if present):
-- SellerName: Look for "seller", "vendor", company being purchased/acquired
-- SellerDescription: Entity type of seller
-- SellerSignerName: Person signing on behalf of seller
-- SellerSignerTitle: Title of person signing for seller
-- InjectionAmountShort: Cash injection, owner investment, equity contribution
-
-CRITICAL — LONG FORMAT FIELDS:
-- Look specifically for written-out dollar amounts in phrases like "the sum of", "amount of", "principal amount"
-- Look for written payment amounts in payment sections
-- These are often in legal language like "Four Million Three Hundred Twenty Thousand and 00/100 Dollars"
-
-Return ONLY the JSON object."""
+    template, prompt_version = load_prompt("field_extraction")
+    prompt = template.format(
+        deal_type=deal.get("deal_type", "Unknown"),
+        loan_program=deal.get("loan_program", "Unknown"),
+        ner_hints=ner_hints,
+        terms_text=terms_text,
+        memo_text=memo_text if memo_text else "Not provided",
+        schema_str=schema_str,
+    )
 
     try:
         response = _claude_with_retry(
@@ -309,7 +284,7 @@ Return ONLY the JSON object."""
     raw = response.content[0].text
     cleaned = _strip_code_fence(raw)
     try:
-        return json.loads(cleaned)
+        parsed = json.loads(cleaned)
     except json.JSONDecodeError as e:
         excerpt = raw[:500] if raw else ""
         logger.error(
@@ -322,3 +297,32 @@ Return ONLY the JSON object."""
             message=f"Claude returned malformed JSON for field extraction: {e}",
             raw_excerpt=excerpt,
         )
+
+    if not isinstance(parsed, dict):
+        logger.error(
+            "extract_fields: Claude returned non-dict JSON (%s). Raw excerpt: %r",
+            type(parsed).__name__, raw[:500] if raw else "",
+        )
+        raise ExtractionStageError(
+            stage="field_extraction",
+            reason="schema_validation",
+            message=(
+                "Claude returned a non-object JSON value for field extraction "
+                f"(got {type(parsed).__name__})."
+            ),
+        )
+
+    try:
+        validated = validate_extracted_fields(parsed, set(schema.keys()))
+    except Exception as e:
+        logger.error(
+            "extract_fields: validation failed: %s. Raw parsed keys: %s",
+            e, list(parsed.keys())[:30],
+        )
+        raise ExtractionStageError(
+            stage="field_extraction",
+            reason="schema_validation",
+            message=f"Field-extraction output failed validation: {e}",
+        )
+
+    return validated, prompt_version

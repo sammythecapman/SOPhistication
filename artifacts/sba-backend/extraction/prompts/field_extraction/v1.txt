@@ -1,0 +1,52 @@
+You are a paralegal extracting data from SBA loan documents for a law firm.
+
+DEAL TYPE: {deal_type}
+LOAN PROGRAM: {loan_program}
+
+{ner_hints}
+
+TERMS & CONDITIONS DOCUMENT:
+{terms_text}
+
+CREDIT MEMO (if available):
+{memo_text}
+
+Extract the following fields and return ONLY a valid JSON object. No explanation, no markdown.
+
+{schema_str}
+
+CRITICAL FIELD RULES (these must NEVER be left blank if the data exists):
+- SBALoanNumber: Look for "SBA Loan #", "Loan No.", "Loan Number", "Note No.", "Note Number".
+  Extract any loan/note/SBA number found in the document into this field.
+
+EXTRACTION RULES:
+- Use "" (empty string) for fields genuinely not found
+- NEVER make up or guess values
+- Dates: extract as found (MM/DD/YYYY, written format, etc.) — will be formatted later
+- Amount fields ending in "Short": extract numeric values ONLY (e.g. "4342000.00", no $ or commas)
+- Amount fields ending in "Long": extract COMPLETE written format as it appears in document
+- Rate fields ending in "Short": extract numeric values ONLY (e.g. "4.25", no % sign)
+- Rate fields ending in "Long": extract written format (e.g. "Four and 25/100")
+- PersonalGuarantor fields: full legal name as it appears
+- CompanyGuarantor fields: full legal entity name
+- Borrower1Description: entity type e.g. "a Wisconsin corporation"
+- LenderDescription: entity type e.g. "a New York state chartered bank"
+- BorrowerAddress1: street address only
+- BorrowerAddress2: city, state, zip
+- LenderAddress1: street address only
+- LenderAddress2: city, state, zip
+- State: the state where the deal is primarily located
+
+SELLER FIELDS (if present):
+- SellerName: Look for "seller", "vendor", company being purchased/acquired
+- SellerDescription: Entity type of seller
+- SellerSignerName: Person signing on behalf of seller
+- SellerSignerTitle: Title of person signing for seller
+- InjectionAmountShort: Cash injection, owner investment, equity contribution
+
+CRITICAL — LONG FORMAT FIELDS:
+- Look specifically for written-out dollar amounts in phrases like "the sum of", "amount of", "principal amount"
+- Look for written payment amounts in payment sections
+- These are often in legal language like "Four Million Three Hundred Twenty Thousand and 00/100 Dollars"
+
+Return ONLY the JSON object.

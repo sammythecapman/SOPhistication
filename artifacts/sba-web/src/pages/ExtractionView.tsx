@@ -5,6 +5,14 @@ import { ResultsView } from "./Results";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+// Optional metadata that the backend now attaches but the codegen client may
+// not yet model. Render as fine print for auditability — hide entirely on
+// older rows that pre-date prompt versioning.
+type PromptVersions = {
+  deal_analysis?: string | null;
+  field_extraction?: string | null;
+};
+
 export default function ExtractionView() {
   const params = useParams();
   const id = parseInt(params.id || "0", 10);
@@ -32,6 +40,12 @@ export default function ExtractionView() {
     );
   }
 
+  const promptVersions = (data as { prompt_versions?: PromptVersions | null })
+    .prompt_versions;
+  const dealVer = promptVersions?.deal_analysis;
+  const fieldVer = promptVersions?.field_extraction;
+  const showVersions = Boolean(dealVer || fieldVer);
+
   return (
     <div className="w-full max-w-5xl mx-auto pb-20">
       <div className="mb-6">
@@ -41,6 +55,12 @@ export default function ExtractionView() {
         </Link>
       </div>
       <ResultsView extraction={data} />
+      {showVersions && (
+        <p className="mt-6 text-xs text-muted-foreground">
+          Prompt versions: deal_analysis {dealVer ?? "unknown"}, field_extraction{" "}
+          {fieldVer ?? "unknown"}
+        </p>
+      )}
     </div>
   );
 }

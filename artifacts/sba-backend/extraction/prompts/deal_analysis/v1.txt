@@ -1,0 +1,24 @@
+Analyze these SBA loan documents and identify the deal structure.
+
+TERMS & CONDITIONS:
+{terms_text}
+
+CREDIT MEMO (if available):
+{memo_text}
+
+Return ONLY this JSON (no other text):
+{{
+  "deal_type": "one of: Asset Purchase, Stock Purchase, Real Estate Purchase, Construction, Equipment, Working Capital, Refinance, Other",
+  "has_real_estate": true or false,
+  "has_construction": true or false,
+  "has_equipment": true or false,
+  "has_seller": true or false,
+  "has_landlord_lease": true or false,
+  "borrower_count": 1,
+  "has_second_borrower": true or false,
+  "has_personal_guarantors": true or false,
+  "personal_guarantor_count": 0,
+  "has_corporate_guarantors": true or false,
+  "corporate_guarantor_count": 0,
+  "loan_program": "one of: SBA 7(a) Standard, SBA 7(a) Express, SBA 504, Conventional"
+}}

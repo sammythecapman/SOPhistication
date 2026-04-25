@@ -1,0 +1,180 @@
+# Replit Agent Prompt — Prompt Versioning and Schema Validation
+
+## Goal
+
+Move the two Claude prompts in `artifacts/sba-backend/extraction/schemas.py` out of inline f-strings and into versioned, file-based prompt assets. Then enforce a strict, validated contract on the JSON that comes back from Claude using Pydantic, so schema drift is caught at the boundary instead of leaking into the database.
+
+This change must be backward-compatible with existing extractions in the database — old rows without prompt-version metadata should keep displaying normally.
+
+Do not touch CORS, error-handling structure, or the React frontend logic except where noted in step 5. The error-handling pass from the prior prompt is assumed to already be in place; integrate cleanly with `ExtractionStageError` and `extraction_health`.
+
+---
+
+## Step 1 — Create a versioned prompt directory
+
+Create `artifacts/sba-backend/extraction/prompts/` with this layout:
+
+```
+prompts/
+├── __init__.py
+├── registry.py
+├── deal_analysis/
+│   ├── v1.txt
+│   └── README.md
+└── field_extraction/
+    ├── v1.txt
+    └── README.md
+```
+
+- `v1.txt` for each prompt should contain the **exact** current prompt text from `schemas.py`, with `{terms_text}`, `{memo_text}`, `{ner_hints}`, `{schema_str}`, `{deal_type}`, and `{loan_program}` as named placeholders (use Python's `str.format` style, not f-strings — these are loaded as plain text and formatted at call time).
+- Each `README.md` should be a short note: what this prompt does, what the inputs are, what the expected output schema is, and a "Changelog" section that says `v1 — initial extraction from inline f-string in schemas.py, <today's date>`.
+
+**`registry.py`** must expose:
+
+```python
+def load_prompt(name: str, version: str = "latest") -> tuple[str, str]:
+    """
+    Returns (prompt_template_text, resolved_version).
+    name: "deal_analysis" or "field_extraction"
+    version: "latest" or an explicit version like "v1"
+    Raises FileNotFoundError if the prompt or version doesn't exist.
+    """
+```
+
+`"latest"` should resolve by listing `vN.txt` files in the directory and picking the highest N. The resolved version string (e.g. `"v1"`) must be returned alongside the text so the pipeline can persist it.
+
+Add a module-level constant `PROMPT_VERSIONS` that returns a dict snapshot of `{name: latest_version}` so it can be logged at startup.
+
+---
+
+## Step 2 — Define Pydantic models for the two LLM outputs
+
+Create `artifacts/sba-backend/extraction/models.py` with two Pydantic v2 models:
+
+### `DealStructure`
+
+Mirror exactly the keys produced by the deal-analysis prompt:
+
+- `deal_type: Literal["Asset Purchase", "Stock Purchase", "Real Estate Purchase", "Construction", "Equipment", "Working Capital", "Refinance", "Other"]`
+- `has_real_estate: bool`
+- `has_construction: bool`
+- `has_equipment: bool`
+- `has_seller: bool`
+- `has_landlord_lease: bool`
+- `borrower_count: int` (ge=1, le=10)
+- `has_second_borrower: bool`
+- `has_personal_guarantors: bool`
+- `personal_guarantor_count: int` (ge=0, le=20)
+- `has_corporate_guarantors: bool`
+- `corporate_guarantor_count: int` (ge=0, le=20)
+- `loan_program: Literal["SBA 7(a) Standard", "SBA 7(a) Express", "SBA 504", "Conventional"]`
+
+Use `model_config = {"extra": "forbid"}` so unexpected keys from Claude raise instead of being silently accepted.
+
+### `ExtractedFields`
+
+This one is dynamic — the keys depend on `build_schema(deal)`. Define it as:
+
+```python
+class ExtractedFields(BaseModel):
+    model_config = {"extra": "allow"}  # we validate keys separately
+    # All values are strings per the prompt's contract
+```
+
+Add a separate validator function `validate_extracted_fields(raw: dict, expected_keys: set[str]) -> dict` that:
+
+1. Confirms every key in `raw` is in `expected_keys` (drop and warn-log any extras — don't crash, schema drift in fields is recoverable).
+2. Confirms every value is a string (coerce non-strings via `str(v)` and warn-log).
+3. Fills any missing `expected_keys` with `""`.
+4. Returns the cleaned dict.
+
+This keeps the dynamic-schema flexibility of `build_schema` while still gating the Claude output through a single validation point.
+
+---
+
+## Step 3 — Refactor `schemas.py` to use the new pieces
+
+In `extraction/schemas.py`:
+
+- Import `load_prompt` from `prompts.registry` and the new models from `models`.
+- `analyze_deal_structure` no longer holds the prompt text inline. Instead:
+  1. Load the prompt template via `load_prompt("deal_analysis")`.
+  2. Format it with the input variables.
+  3. Call Claude (keep the existing `_claude_with_retry`).
+  4. Parse the response JSON, then `DealStructure.model_validate(parsed)`.
+  5. Return a tuple: `(deal_dict, prompt_version)` — change the function signature accordingly. On `ValidationError`, raise `ExtractionStageError` with `reason="schema_validation"`, including the validation error details (do NOT include the raw Claude text in user-facing error messages — log it server-side only).
+- `extract_fields` parallel refactor:
+  1. Load `field_extraction` prompt.
+  2. Format and call.
+  3. Parse JSON, run `validate_extracted_fields(parsed, set(schema.keys()))`.
+  4. Return `(validated_dict, prompt_version)`.
+  5. Same `ExtractionStageError` behavior on validation failure.
+
+Both functions' callers in `pipeline.py` need updating to receive the tuple.
+
+---
+
+## Step 4 — Persist prompt versions per extraction
+
+The `sba_extractions` table needs new columns:
+
+- `deal_analysis_prompt_version TEXT`
+- `field_extraction_prompt_version TEXT`
+
+Add them via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in whatever init function `db.py` uses, matching the pattern from the previous health-info migration.
+
+In `pipeline.py`, the result dict gets two new top-level keys:
+
+```python
+"prompt_versions": {
+    "deal_analysis": "v1",
+    "field_extraction": "v1",
+}
+```
+
+Persist these to the new columns on insert. Include them in the `/api/extractions/<id>` and `/api/jobs/<job_id>` responses.
+
+---
+
+## Step 5 — Surface prompt version in the UI (lightly)
+
+In `artifacts/sba-web/src/pages/ExtractionView.tsx`, add a small subtitle or footer line under the existing metadata showing `Prompt versions: deal_analysis ${v}, field_extraction ${v}`. Don't make it loud — `text-xs text-muted-foreground` styling is fine. The point is auditability, not a UI feature.
+
+If `prompt_versions` is missing on older rows (legacy data from before this change), display nothing rather than `undefined`.
+
+---
+
+## Step 6 — Backfill helper (one-shot)
+
+Create `artifacts/sba-backend/scripts/backfill_prompt_versions.py` (a one-off utility, not wired into the app):
+
+```python
+"""
+Marks all pre-existing extractions as having been produced by an unversioned
+prompt. Run once after deploying this change.
+"""
+```
+
+It should `UPDATE sba_extractions SET deal_analysis_prompt_version = 'pre-versioning', field_extraction_prompt_version = 'pre-versioning' WHERE deal_analysis_prompt_version IS NULL;`
+
+This makes the audit trail unambiguous: rows tagged `pre-versioning` are explicitly known-unversioned, rather than just `NULL`.
+
+---
+
+## Acceptance criteria
+
+- `prompts/deal_analysis/v1.txt` and `prompts/field_extraction/v1.txt` exist and produce identical Claude output to the prior inline f-strings on a known test document. (Run one extraction before the change, one after, and diff `formatted_data`. They should match.)
+- `load_prompt("deal_analysis", "latest")` returns `("...", "v1")`.
+- Forcing Claude to return JSON with an unexpected key in the deal-analysis output raises `ExtractionStageError` with `reason="schema_validation"` and the pipeline marks the extraction as degraded.
+- `sba_extractions` rows produced after this change have non-null `deal_analysis_prompt_version` and `field_extraction_prompt_version`.
+- The `ExtractionView` page shows the prompt versions in fine print.
+- Running `backfill_prompt_versions.py` once tags every pre-existing row as `pre-versioning` and is idempotent if run again.
+- No prompt text remains in `schemas.py` source code.
+
+---
+
+## Why this matters (brief context for the agent)
+
+Right now if I edit a prompt and re-run extractions, there's no record of which prompt produced which database row. That makes prompt iteration unsafe — I can't tell whether a quality regression came from a prompt change or a document change. After this pass, every extraction is permanently tagged with the exact prompt version that produced it, and the JSON contract with Claude is enforced at the boundary instead of trusted.
+
+When done, commit with: `extraction: version prompts and validate LLM output via Pydantic`.

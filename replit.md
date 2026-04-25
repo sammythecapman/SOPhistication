@@ -117,7 +117,17 @@ Every extraction now carries an `extraction_health` block:
 { "degraded": true|false, "stage_failures": [ { "stage": "...", "reason": "...", "message": "..." } ] }
 ```
 
-If a Claude stage (`deal_analysis` or `field_extraction`) fails — malformed JSON, API error, etc. — the pipeline raises `ExtractionStageError` (defined in `extraction/errors.py`), the orchestrator records it instead of crashing, and the result is marked degraded. The frontend Results page surfaces this as an amber warning banner so reviewers know that blank fields may reflect a stage failure rather than missing data.
+If a Claude stage (`deal_analysis` or `field_extraction`) fails — malformed JSON, API error, schema validation, etc. — the pipeline raises `ExtractionStageError` (defined in `extraction/errors.py`), the orchestrator records it instead of crashing, and the result is marked degraded. The frontend Results page surfaces this as an amber warning banner so reviewers know that blank fields may reflect a stage failure rather than missing data.
+
+## Versioned Prompts and Schema Validation
+
+Both Claude prompts live as plain text under `extraction/prompts/<name>/vN.txt` and are loaded at call time via `extraction/prompts/registry.load_prompt(name, version="latest")` — no prompt strings remain in `schemas.py`. The active versions are logged at startup as `PROMPT_VERSIONS`.
+
+Claude's JSON output is validated at the boundary by `extraction/models.py`:
+- `DealStructure` (Pydantic, `extra="forbid"`) gates the deal-analysis output. Unknown keys raise `ValidationError`, which the pipeline converts to `ExtractionStageError(reason="schema_validation")` and marks the extraction degraded.
+- `validate_extracted_fields(raw, expected_keys)` reconciles the dynamic field-extraction output against `build_schema(deal)`: unknown keys are dropped (warn-log), non-strings are coerced to `str` (warn-log), missing expected keys are filled with `""`.
+
+Every saved extraction is tagged with the prompt versions that produced it via two new columns: `deal_analysis_prompt_version` and `field_extraction_prompt_version`. The `ExtractionView` page shows them in fine print (hidden on legacy rows). To tag pre-existing rows once after deploying this change, run `python artifacts/sba-backend/scripts/backfill_prompt_versions.py` — it's idempotent and stamps untagged rows as `pre-versioning`.
 
 ## SharePoint Setup
 

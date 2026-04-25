@@ -19,6 +19,7 @@ from .formatting import apply_field_formatting
 from .regex_fallbacks import regex_extract_critical_fields
 from .confidence import score_extracted_fields
 from .errors import ExtractionStageError
+from .prompts.registry import PROMPT_VERSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -102,10 +103,17 @@ def run_extraction_pipeline(
     # ── extraction_health tracking ──
     stage_failures: list = []
 
+    # Capture which prompt versions this run is using. Even on stage failure
+    # we know which template was loaded, since load_prompt runs before Claude.
+    deal_analysis_version: str = PROMPT_VERSIONS.get("deal_analysis", "unknown")
+    field_extraction_version: str = PROMPT_VERSIONS.get("field_extraction", "unknown")
+
     # ── Stage 3: Analyze Deal Structure ──
     update_stage("analyzing_deal", "Analyzing deal structure", 30)
     try:
-        deal = analyze_deal_structure(terms_text, memo_text, client)
+        deal, deal_analysis_version = analyze_deal_structure(
+            terms_text, memo_text, client,
+        )
     except ExtractionStageError as e:
         logger.warning(
             "Pipeline degraded — deal_analysis failed (%s): %s",
@@ -120,7 +128,9 @@ def run_extraction_pipeline(
     # ── Stage 4: Extract Fields ──
     update_stage("extracting_fields", "Extracting fields with AI", 50)
     try:
-        raw_data = extract_fields(terms_text, memo_text, schema, deal, ner_hints, client)
+        raw_data, field_extraction_version = extract_fields(
+            terms_text, memo_text, schema, deal, ner_hints, client,
+        )
     except ExtractionStageError as e:
         logger.warning(
             "Pipeline degraded — field_extraction failed (%s): %s",
@@ -179,6 +189,10 @@ def run_extraction_pipeline(
         "ner_warnings": ner_warnings,
         "confidence_scores": confidence_scores,
         "extraction_health": extraction_health,
+        "prompt_versions": {
+            "deal_analysis": deal_analysis_version,
+            "field_extraction": field_extraction_version,
+        },
         "summary": {
             "fields_populated": found,
             "fields_total": total,

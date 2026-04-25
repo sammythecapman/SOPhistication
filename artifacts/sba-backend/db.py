@@ -67,6 +67,16 @@ def init_db():
             ALTER TABLE sba_extractions
             ADD COLUMN IF NOT EXISTS extraction_health JSONB
         """)
+        # Per-extraction prompt version tags so we can audit which prompt
+        # produced each row when iterating on prompt text.
+        cur.execute("""
+            ALTER TABLE sba_extractions
+            ADD COLUMN IF NOT EXISTS deal_analysis_prompt_version TEXT
+        """)
+        cur.execute("""
+            ALTER TABLE sba_extractions
+            ADD COLUMN IF NOT EXISTS field_extraction_prompt_version TEXT
+        """)
 
         # ── File access audit log ──
         cur.execute("""
@@ -115,13 +125,15 @@ def init_db():
 def save_extraction(result: Dict[str, Any]) -> int:
     """Save an extraction result and return the new row ID."""
     summary = result.get("summary", {})
+    prompt_versions = result.get("prompt_versions") or {}
     with get_cursor() as cur:
         cur.execute("""
             INSERT INTO sba_extractions
                 (terms_filename, credit_memo_filename, deal_structure, raw_data,
                  formatted_data, ner_warnings, confidence_scores, extraction_health,
+                 deal_analysis_prompt_version, field_extraction_prompt_version,
                  fields_populated, fields_total, completion_pct)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             result.get("terms_filename", ""),
@@ -132,6 +144,8 @@ def save_extraction(result: Dict[str, Any]) -> int:
             json.dumps(result.get("ner_warnings") or []),
             json.dumps(result.get("confidence_scores") or {}),
             json.dumps(result.get("extraction_health") or {"degraded": False, "stage_failures": []}),
+            prompt_versions.get("deal_analysis"),
+            prompt_versions.get("field_extraction"),
             summary.get("fields_populated", 0),
             summary.get("fields_total", 0),
             summary.get("completion_percentage", 0),
@@ -427,6 +441,15 @@ def _row_to_dict(row) -> Dict[str, Any]:
     row = dict(row)
     ner_warnings = row.get("ner_warnings") or []
 
+    deal_pv = row.get("deal_analysis_prompt_version")
+    field_pv = row.get("field_extraction_prompt_version")
+    prompt_versions: Optional[Dict[str, str]] = None
+    if deal_pv or field_pv:
+        prompt_versions = {
+            "deal_analysis": deal_pv,
+            "field_extraction": field_pv,
+        }
+
     return {
         "id": row["id"],
         "terms_filename": row["terms_filename"],
@@ -437,6 +460,7 @@ def _row_to_dict(row) -> Dict[str, Any]:
         "ner_warnings": ner_warnings if isinstance(ner_warnings, list) else [],
         "confidence_scores": row.get("confidence_scores") or {},
         "extraction_health": row.get("extraction_health") or {"degraded": False, "stage_failures": []},
+        "prompt_versions": prompt_versions,
         "fields_populated": row["fields_populated"],
         "fields_total": row["fields_total"],
         "completion_pct": float(row["completion_pct"]),
