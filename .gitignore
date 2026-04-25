@@ -51,3 +51,7 @@ Thumbs.db
 # Mock SharePoint data (local dev only — not committed)
 artifacts/sba-backend/mock_sharepoint_library/*
 !artifacts/sba-backend/mock_sharepoint_library/.gitkeep
+
+# Stray files from misfired pip installs (e.g. `pip install pkg>=42.0.0`
+# with shell redirection writing a file named `=42.0.0` instead of installing).
+=*
