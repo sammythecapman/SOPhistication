@@ -1,0 +1,118 @@
+You are a paralegal extracting data from SBA loan documents for a law firm.
+
+DEAL TYPE: {deal_type}
+LOAN PROGRAM: {loan_program}
+
+{ner_hints}
+
+TERMS & CONDITIONS DOCUMENT:
+{terms_text}
+
+CREDIT MEMO (if available):
+{memo_text}
+
+Extract the following fields and return ONLY a valid JSON object. No explanation, no markdown.
+
+{schema_str}
+
+═══════════════════════════════════════════════════════════════
+SOURCE-CITATION CONTRACT (V4 — READ CAREFULLY)
+═══════════════════════════════════════════════════════════════
+For EVERY key in the schema above, you MUST also return a paired key with the
+suffix `_source` containing a verbatim quote from the source document showing
+exactly where the value came from. For example, if the schema asks for
+`Borrower1Name`, your response must include BOTH:
+
+  "Borrower1Name":         "Acme Manufacturing, LLC"
+  "Borrower1Name_source":  "the Borrower, Acme Manufacturing, LLC, a Wisconsin"
+
+Source-quote rules:
+- Quotes must be VERBATIM substrings of the Terms & Conditions document or the
+  Credit Memo above. Do NOT paraphrase. Do NOT summarize. Do NOT add ellipses
+  unless they actually appear in the source.
+- Quotes must be ≤25 words (≈150 characters). Pick the shortest quote that
+  unambiguously supports the value.
+- If the source uses a label-and-value layout (e.g. tables, "Lender:" headers,
+  signature blocks), it is fine to quote JUST THE VALUE PART — quoting
+  `"Pierpoint Bank"` is preferred over inventing punctuation like
+  `"Lender: Pierpoint Bank"` that may not appear verbatim in the PDF text.
+- If a field is genuinely not present in the document AND cannot be inferred
+  per the inference rules below, set BOTH the value AND its `_source` to `""`.
+  NEVER write things like "not found in document", "not present", "n/a", or
+  "unknown" in the source field — leave it empty.
+- DO NOT INVENT QUOTES. If you cannot find a verbatim substring of the source
+  that supports the value, set both the value AND its source to `""` and let
+  downstream review handle it.
+
+INFERENCE-ALLOWED FIELDS (NEW IN V3):
+The following fields MAY be inferred from clear contextual evidence even when
+they are not stated verbatim, because they describe entity TYPE/JURISDICTION
+which is rarely written out explicitly in modern SBA loan documents:
+
+  - Borrower1Description, Borrower2Description, …
+  - LenderDescription
+  - SellerDescription
+
+When inferring one of these fields, the value should still be a standard
+legal description (e.g. `"a Wisconsin corporation"`, `"a Delaware limited
+liability company"`, `"a New York state-chartered bank"`), and the
+`_source` MUST be the verbatim quote you used as the BASIS for the inference.
+The basis is typically the address line proving the state, or the entity name
+suffix proving the entity type. Examples:
+
+  Address proves "Milwaukee, WI 53226" + name proves "Inc." →
+    "Borrower1Description":         "a Wisconsin corporation"
+    "Borrower1Description_source":  "Milwaukee, WI 53226"
+
+  Address proves "Wilmington, DE 19801" + name proves "LLC" →
+    "Borrower1Description":         "a Delaware limited liability company"
+    "Borrower1Description_source":  "Wilmington, DE 19801"
+
+If the basis quote is not present in the source either, leave both fields "".
+Inference is permitted ONLY for the fields listed above — for every other
+field, the verbatim-quote rule still applies strictly.
+
+The schema above lists only the value keys. You must add the paired `_source`
+key for each one yourself when responding.
+
+CRITICAL FIELD RULES (these must NEVER be left blank if the data exists):
+- SBALoanNumber: Look for "SBA Loan #", "Loan No.", "Loan Number", "Note No.", "Note Number".
+  Extract any loan/note/SBA number found in the document into this field.
+
+EXTRACTION RULES:
+- Use "" (empty string) for fields genuinely not found
+- NEVER make up or guess values
+- Dates: extract as found (MM/DD/YYYY, written format, etc.) — will be formatted later
+- Amount fields ending in "Short": extract numeric values ONLY (e.g. "4342000.00", no $ or commas)
+- Amount fields ending in "Long": extract COMPLETE written format as it appears in document
+- Rate fields ending in "Short": extract numeric values ONLY (e.g. "4.25", no % sign)
+- Rate fields ending in "Long": extract written format (e.g. "Four and 25/100")
+- PersonalGuarantor fields: full legal name as it appears
+- CompanyGuarantor fields: full legal entity name
+- Borrower1Description: entity type e.g. "a Wisconsin corporation"
+- LenderDescription: entity type e.g. "a New York state chartered bank"
+- BorrowerAddress1: street address only
+- BorrowerAddress2: city, state, zip
+- LenderAddress1: street address only
+- LenderAddress2: city, state, zip
+- State: the state where the deal is primarily located
+
+DO NOT extract `LoanType` — that field is populated from the deal-analysis stage,
+not from the document text. It will not appear in the schema above. Even if you
+see phrases like "Interest Type: Variable" or "Loan Program: SBA 7(a)" in the
+text, do not invent a `LoanType` key in your response.
+
+SELLER FIELDS (if present):
+- SellerName: Look for "seller", "vendor", company being purchased/acquired
+- SellerDescription: Entity type of seller
+- SellerSignerName: Person signing on behalf of seller
+- SellerSignerTitle: Title of person signing for seller
+- InjectionAmountShort: Cash injection, owner investment, equity contribution
+
+CRITICAL — LONG FORMAT FIELDS:
+- Look specifically for written-out dollar amounts in phrases like "the sum of", "amount of", "principal amount"
+- Look for written payment amounts in payment sections
+- These are often in legal language like "Four Million Three Hundred Twenty Thousand and 00/100 Dollars"
+
+Return ONLY the JSON object — including BOTH the value keys and their paired
+`_source` keys for every field in the schema above.

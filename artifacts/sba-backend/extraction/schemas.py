@@ -142,7 +142,11 @@ def build_schema(deal: dict) -> dict:
         "SBAApprovalDate":      "",
         "LoanAmountShort":      "",
         "LoanAmountLong":       "",
-        "LoanType":             "",
+        # NOTE: LoanType is intentionally omitted here. It is derived from
+        # the deal-analysis stage's `loan_program` (validated by the
+        # DealStructure Literal) and injected into raw_data by the pipeline
+        # after extract_fields. Re-adding it here would let Claude guess
+        # values like "Variable" from interest-rate context.
         "SpreadShort":          "",
         "SpreadLong":           "",
         "InitialRateShort":     "",

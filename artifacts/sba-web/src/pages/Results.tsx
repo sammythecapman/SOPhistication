@@ -60,11 +60,20 @@ function truncateQuote(q: string): string {
 }
 
 function FieldSourceCitation({ source }: { source: FieldSource }) {
-  // Regex-fallback sentinel: render a tiny gray pill, never the literal string.
+  // Pipeline-internal provenance sentinels: render a tiny gray pill rather
+  // than the literal sentinel text, and never show "Unverified quote" for
+  // these (they have no quote to verify).
   if (source.quote === "[regex_fallback]") {
     return (
       <div className="mt-2 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
         Pattern-matched
+      </div>
+    );
+  }
+  if (source.quote === "[deal_analysis]") {
+    return (
+      <div className="mt-2 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+        From deal classification
       </div>
     );
   }

@@ -1,0 +1,258 @@
+# Replit Agent Prompt — Fix `LoanType` Field (Use Deal-Analysis loan_program Instead)
+
+## Context
+
+The `LoanType` field in extraction results has been returning wrong values. Recent example: a Standard 7(a) loan was extracted as `"Variable"` because the model latched onto an `"Interest Type: Variable"` line in the document. Reading the v3 prompt, this is unsurprising: `LoanType` is listed in the schema dictionary but there are **no instructions anywhere** in the prompt explaining what `LoanType` means or what values are valid. Claude is guessing in the dark and citing a plausible-looking but wrong substring.
+
+The root cause is that `LoanType` and `loan_program` are duplicates. The deal-analysis prompt already classifies every document as one of:
+
+```
+"SBA 7(a) Standard", "SBA 7(a) Express", "SBA 504", "Conventional"
+```
+
+…and the result is validated by `DealStructure` in `extraction/models.py` and stored on `deal.loan_program`. The field-extraction prompt should not be re-extracting this — it should just consume it.
+
+This change does three things in one commit:
+
+1. Remove `LoanType` from the field-extraction schema so the model stops guessing.
+2. In the pipeline, populate `formatted_data["LoanType"]` from `deal["loan_program"]` after deal analysis.
+3. Add a generic per-field allowed-values validator at the Pydantic boundary so any future field with a constrained value space will surface as a `schema_validation` failure instead of silently passing through.
+4. Backfill existing rows in the database whose `formatted_data.LoanType` is wrong.
+
+This is a v4 of the field-extraction prompt — do not edit v3. Existing extractions and v3 stay intact for audit.
+
+---
+
+## Step 1 — Remove `LoanType` from `build_schema`
+
+File: `artifacts/sba-backend/extraction/schemas.py`
+
+In the `fields` dictionary inside `build_schema(deal: dict)`, **delete** the line:
+
+```python
+"LoanType":             "",
+```
+
+That's the only change to that function.
+
+## Step 2 — Create `prompts/field_extraction/v4.txt`
+
+Copy `v3.txt` to `v4.txt`. The body is nearly identical; the differences are:
+
+1. Update the section header from `SOURCE-CITATION CONTRACT (V3 — READ CAREFULLY)` to `SOURCE-CITATION CONTRACT (V4 — READ CAREFULLY)`.
+2. The `{schema_str}` injection no longer contains `LoanType` (this happens automatically once Step 1 lands, but verify by running an extraction and checking the prompt logs).
+3. Add a single line near the bottom of the rules section, just above `Return ONLY the JSON object …`:
+
+```
+DO NOT extract `LoanType` — that field is populated from the deal-analysis stage,
+not from the document text. It will not appear in the schema above.
+```
+
+This is a belt-and-suspenders defense in case some future change accidentally re-adds the key to the schema.
+
+Update `prompts/field_extraction/README.md` with a Changelog entry: `v4 — removed LoanType from extraction (now sourced from deal_analysis.loan_program), <today's date>`.
+
+## Step 3 — Populate `LoanType` in the pipeline from `deal.loan_program`
+
+File: `artifacts/sba-backend/extraction/pipeline.py`
+
+After the `extract_fields` call (around the regex-fallback block) and **before** confidence scoring, inject the loan_program value into `raw_data`:
+
+```python
+# LoanType is derived from the deal-analysis stage, not extracted from text.
+# Mapping is identity for now: "SBA 7(a) Standard" → "SBA 7(a) Standard", etc.
+loan_program = deal.get("loan_program") or ""
+if loan_program:
+    raw_data["LoanType"] = loan_program
+```
+
+Place this immediately after the existing regex-fallback loop:
+
+```python
+# ── Apply regex fallbacks for critical fields ──
+regex_results = regex_extract_critical_fields(terms_text)
+for field, value in regex_results.items():
+    if field not in raw_data or not raw_data.get(field):
+        raw_data[field] = value
+
+# ── Derive LoanType from deal-analysis ──   <-- NEW
+loan_program = deal.get("loan_program") or ""
+if loan_program:
+    raw_data["LoanType"] = loan_program
+```
+
+Also add a corresponding entry to the field-source dict so the UI shows where this value came from:
+
+```python
+# After raw_sources is populated from extract_fields and before field_sources is assembled:
+if loan_program:
+    raw_sources["LoanType"] = "[deal_analysis]"
+```
+
+The pipeline's existing field-sources verification logic in `_verify_quote_in_source` (or wherever quote verification lives — read the file to find it) already handles the `[regex_fallback]` sentinel by setting `verified=None`. Extend that special-case check to also recognize `[deal_analysis]` and set `verified=None` for it. The user-facing handling will be identical.
+
+The `formatted_data` produced by `apply_field_formatting(raw_data)` will then include `"LoanType": "SBA 7(a) Standard"` (or whichever program the deal-analysis stage classified). No formatter change should be needed because the value is already a clean string — but verify by reading `extraction/formatting.py` and confirm `apply_field_formatting` doesn't have a special case for `LoanType` that needs to be removed.
+
+## Step 4 — Surface the `[deal_analysis]` sentinel in the UI
+
+File: `artifacts/sba-web/src/pages/Results.tsx`
+
+The Results page already handles the `[regex_fallback]` sentinel by rendering a small "Pattern-matched" badge instead of a quote. Add a parallel case for `[deal_analysis]`:
+
+- If `field_sources[FieldName].quote === "[deal_analysis]"`, render a small gray badge that reads **"From deal classification"** instead of a quote. Same styling as the regex-fallback badge, just different label.
+
+Search for the existing `[regex_fallback]` handling and add the sibling case right next to it. Keep both behaviors silent on `verified` (no red "Unverified quote" badge for either).
+
+## Step 5 — Generic per-field allowed-values validator
+
+File: `artifacts/sba-backend/extraction/models.py`
+
+Right now `validate_extracted_fields(raw, expected_keys)` accepts any string for any field. The `LoanType` bug slipped through partly because the validator had no concept of "this field has a constrained value space."
+
+Add a module-level constant declaring allowed values for fields that have them:
+
+```python
+# Per-field allowed value sets. Fields not in this dict accept any string.
+# Add new entries as the schema gains constrained-value fields.
+ALLOWED_FIELD_VALUES: Dict[str, Set[str]] = {
+    # Add future entries here. LoanType is now derived from deal_analysis
+    # and is not extracted by the field-extraction prompt, so it does not
+    # need an entry — but the deal-analysis stage's DealStructure model
+    # already enforces loan_program via Literal[...] on the Pydantic side.
+}
+```
+
+Leave the dict empty for now — `LoanType` doesn't belong here because it's no longer extracted. The point of adding the empty dict is so the validator infrastructure exists for the next time a constrained-value field is added.
+
+Extend `validate_extracted_fields` to consult this dict. After the existing loop that drops extras and coerces non-strings, add a second pass:
+
+```python
+violations: list[str] = []
+for k, v in cleaned.items():
+    if not v:
+        continue
+    allowed = ALLOWED_FIELD_VALUES.get(k)
+    if allowed is not None and v not in allowed:
+        violations.append(f"{k}={v!r} (allowed: {sorted(allowed)})")
+
+if violations:
+    logger.error(
+        "validate_extracted_fields: %d field(s) violated allowed-value constraints: %s",
+        len(violations), violations,
+    )
+    raise ValueError(
+        f"Field-extraction output contained values outside allowed sets: {violations}"
+    )
+```
+
+The existing call site in `schemas.py:extract_fields` already wraps `validate_extracted_fields` in a try/except that converts exceptions to `ExtractionStageError` with `reason="schema_validation"`, so violations will surface through the existing degraded-extraction UX. No additional plumbing needed.
+
+## Step 6 — One-shot backfill script for existing rows
+
+Create `artifacts/sba-backend/scripts/backfill_loantype_from_deal.py`:
+
+```python
+"""
+Backfill formatted_data.LoanType in existing extractions to mirror
+deal_structure.loan_program. Run once after deploying the LoanType fix.
+
+Idempotent: safe to re-run. Updates only rows where the current LoanType
+differs from deal_structure.loan_program.
+"""
+
+import os
+import sys
+import json
+from pathlib import Path
+
+THIS_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = THIS_DIR.parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+import db  # noqa: E402
+
+
+def backfill() -> int:
+    if not os.environ.get("DATABASE_URL"):
+        raise RuntimeError("DATABASE_URL is not set; cannot run backfill.")
+
+    updated = 0
+    with db.get_cursor() as cur:
+        cur.execute("""
+            SELECT id, deal_structure, formatted_data, raw_data, field_sources
+            FROM sba_extractions
+        """)
+        rows = cur.fetchall()
+
+        for row in rows:
+            deal = row["deal_structure"] or {}
+            formatted = row["formatted_data"] or {}
+            raw = row["raw_data"] or {}
+            sources = row["field_sources"] or {}
+
+            program = (deal.get("loan_program") or "").strip()
+            if not program:
+                continue
+            current = (formatted.get("LoanType") or "").strip()
+            if current == program:
+                continue
+
+            formatted["LoanType"] = program
+            raw["LoanType"] = program
+            sources["LoanType"] = {"quote": "[deal_analysis]", "verified": None}
+
+            cur.execute("""
+                UPDATE sba_extractions
+                SET formatted_data = %s,
+                    raw_data       = %s,
+                    field_sources  = %s
+                WHERE id = %s
+            """, (
+                json.dumps(formatted),
+                json.dumps(raw),
+                json.dumps(sources),
+                row["id"],
+            ))
+            updated += 1
+
+    return updated
+
+
+if __name__ == "__main__":
+    n = backfill()
+    if n == 0:
+        print("Backfill complete: all rows already aligned.")
+    else:
+        print(f"Backfill complete: corrected LoanType on {n} row(s).")
+```
+
+Run it once after deploying. The agent does not need to execute it — flag in the commit message that it should be run manually.
+
+---
+
+## Acceptance criteria
+
+- `build_schema()` in `schemas.py` no longer contains `"LoanType"`.
+- `prompts/field_extraction/v4.txt` exists, README has a v4 changelog entry, and `load_prompt("field_extraction", "latest")` resolves to v4.
+- A fresh extraction of an SBA 7(a) Standard document produces `formatted_data.LoanType == "SBA 7(a) Standard"`.
+- The Results page renders `LoanType` with a small "From deal classification" badge instead of a verbatim quote, and no red "Unverified quote" badge.
+- `field_sources["LoanType"]` is `{"quote": "[deal_analysis]", "verified": null}` in the API response.
+- `ALLOWED_FIELD_VALUES` exists in `models.py` (empty dict is fine for now); `validate_extracted_fields` raises if any field's value is outside its declared allowed set.
+- `scripts/backfill_loantype_from_deal.py` exists and is idempotent.
+- Old extractions where `LoanType == "Variable"` (or any other wrong value) are corrected after running the backfill script.
+- Force a regression test: run an extraction, then manually inject `"LoanType"` back into `build_schema` for a single test run and confirm the v4 prompt's "DO NOT extract LoanType" rule plus the (currently empty) allowed-values check don't cause a false positive — the model should leave it blank, and if it doesn't, the value flows through harmlessly. (After verification, remove the test injection.)
+
+## Out of scope
+
+- Don't change `DealStructure` in `models.py` — it already enforces `loan_program` via `Literal[...]`.
+- Don't migrate v3 prompt away — v3 stays for audit, just like v1 and v2.
+- Don't add automated tests — handled separately.
+- Don't change the deal-analysis prompt or the regex fallbacks.
+
+Commit message: `extraction: derive LoanType from deal_analysis.loan_program (fixes wrong "Variable" extractions)`
+
+After deploying, run the backfill script manually:
+```
+cd artifacts/sba-backend && python scripts/backfill_loantype_from_deal.py
+```

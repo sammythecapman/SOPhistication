@@ -152,6 +152,25 @@ def run_extraction_pipeline(
             raw_data[field] = value
             raw_sources[field] = "[regex_fallback]"
 
+    # ── Derive LoanType from deal-analysis ──
+    # LoanType is NOT extracted from the document text — earlier prompts
+    # asked the model to fill it and the model often latched onto unrelated
+    # phrases like "Interest Type: Variable". The deal-analysis stage
+    # already classifies every deal into one of the four SBA programs
+    # (validated by DealStructure.loan_program's Literal[...]); we mirror
+    # that value into the extracted-fields output so downstream consumers
+    # see a single canonical LoanType.
+    loan_program = (deal.get("loan_program") or "").strip()
+    # Always set the LoanType key so the formatted_data output shape stays
+    # stable even when deal_analysis failed and loan_program is unknown
+    # (matches the pre-fix contract where the schema seeded LoanType=""). The
+    # source sentinel is only attached when we actually have a value to cite;
+    # an empty value falls through the field_sources loop's `if not value`
+    # skip below, which is the same behavior as any other empty field.
+    raw_data["LoanType"] = loan_program
+    if loan_program:
+        raw_sources["LoanType"] = "[deal_analysis]"
+
     # ── Stage 5: Confidence Scoring ──
     update_stage("validating", "Scoring extraction confidence", 75)
     confidence_scores: dict = {}
@@ -182,7 +201,13 @@ def run_extraction_pipeline(
         if not value or not str(value).strip():
             continue
         quote = raw_sources.get(field, "") or ""
-        if quote == "[regex_fallback]":
+        if quote in ("[regex_fallback]", "[deal_analysis]"):
+            # Pipeline-internal sentinels for non-textual provenance:
+            # `[regex_fallback]` = filled by extraction.regex_fallbacks
+            # `[deal_analysis]` = derived from DealStructure.loan_program
+            # Neither has a quote to verify; leave verified=None so the UI
+            # renders the appropriate provenance badge instead of the red
+            # "Unverified quote" warning.
             verified: Optional[bool] = None
         elif quote:
             verified = _verify_quote_in_source(
@@ -197,7 +222,9 @@ def run_extraction_pipeline(
         # `model_cited_source` shows the actual quote (or "" if regex-filled
         # / no model citation). The sentinel string isn't user-facing.
         entry["model_cited_source"] = (
-            src["quote"] if src["quote"] != "[regex_fallback]" else ""
+            src["quote"]
+            if src["quote"] not in ("[regex_fallback]", "[deal_analysis]")
+            else ""
         )
         entry["cited_source_in_document"] = src["verified"]
 

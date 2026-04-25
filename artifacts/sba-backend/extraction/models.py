@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 # but we don't trust the model. Anything longer is truncated with a "…" suffix.
 _MAX_SOURCE_QUOTE_CHARS = 200
 
+# Per-field allowed value sets. Fields not in this dict accept any string.
+# Add entries here as the schema gains constrained-value fields. Empty for
+# now — `LoanType` does NOT belong here because it's no longer extracted by
+# the field-extraction prompt; the deal-analysis stage's DealStructure model
+# already enforces `loan_program` via Literal[...] on the Pydantic side, and
+# the pipeline mirrors that value into raw_data["LoanType"]. The point of
+# keeping the dict (even empty) is so the validator infrastructure exists
+# the moment a future constrained-value field is added.
+ALLOWED_FIELD_VALUES: Dict[str, Set[str]] = {}
+
 
 class DealStructure(BaseModel):
     """
@@ -165,5 +175,27 @@ def validate_extracted_fields(
     for k in expected_keys:
         values.setdefault(k, "")
         sources.setdefault(k, "")
+
+    # Final pass: enforce per-field allowed-value constraints. Any value
+    # outside the declared set surfaces as a hard validation failure, which
+    # the caller in schemas.extract_fields wraps as ExtractionStageError
+    # with reason="schema_validation" — i.e. it appears in the existing
+    # degraded-extraction UX rather than silently passing through.
+    violations: list[str] = []
+    for k, v in values.items():
+        if not v:
+            continue
+        allowed = ALLOWED_FIELD_VALUES.get(k)
+        if allowed is not None and v not in allowed:
+            violations.append(f"{k}={v!r} (allowed: {sorted(allowed)})")
+
+    if violations:
+        logger.error(
+            "validate_extracted_fields: %d field(s) violated allowed-value constraints: %s",
+            len(violations), violations,
+        )
+        raise ValueError(
+            f"Field-extraction output contained values outside allowed sets: {violations}"
+        )
 
     return values, sources
