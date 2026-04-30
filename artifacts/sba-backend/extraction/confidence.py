@@ -99,6 +99,7 @@ def score_extracted_fields(
     ner_entities: Dict[str, List[str]],
     raw_text: str,
     learned_suppressions: Optional[Dict[str, str]] = None,
+    field_sources: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """
     Score every SCORED_FIELD that has a non-empty extracted value.
@@ -117,6 +118,26 @@ def score_extracted_fields(
 
     learned_suppressions: mapping of field_name → "suppress_yellow" | "downgrade_red"
     applied after scoring to reduce noise for known-noisy field types.
+
+    field_sources: optional per-field model citation dict from the pipeline
+    of the form
+    `{field: {"quote": str, "verified": bool|None, "quote_verified": bool}}`.
+
+    When present, YELLOW flags are promoted to GREEN only when
+    `quote_verified is True` — i.e. the model's literal quote was found as
+    a whitespace-collapsed substring of source text. We deliberately do
+    NOT use the looser `verified` field (which also accepts a value-only
+    fallback): the value-fallback is the same evidence that already raised
+    the field to YELLOW, so promoting on it would be circular reasoning.
+    The strict quote-substring signal is genuinely independent — the model
+    quoted exactly the line the document contains — so it's safe evidence
+    that the field is well-sourced even when spaCy NER missed the entity.
+
+    Rationale: `en_core_web_sm` routinely misses uncommon surnames and
+    small lender brands, which empirically drove the YELLOW
+    false-positive rate to ~100%. RED is intentionally NOT promoted here:
+    a value that doesn't appear in the source text at all is still treated
+    as a hallucination risk regardless of what the model claimed.
     """
     if learned_suppressions is None:
         learned_suppressions = {}
@@ -158,7 +179,25 @@ def score_extracted_fields(
                 tier = "red"
                 match_details = "Value NOT found anywhere in source document text"
 
-        # Apply learned threshold adjustments
+        # Promote YELLOW → GREEN when the model's literal quote was found
+        # in the source text (strict Tier-1 signal). The
+        # `is_text_citation` guard is belt-and-suspenders: sentinel quotes
+        # like "[regex_fallback]" / "[deal_analysis]" should never have
+        # quote_verified=True (they bypass _quote_substring_in_source in
+        # the pipeline), but the explicit check defends against any future
+        # change that accidentally sets the strong signal on a sentinel.
+        if tier == "yellow" and field_sources is not None:
+            src = field_sources.get(field) or {}
+            quote = src.get("quote", "") or ""
+            quote_verified = src.get("quote_verified", False)
+            is_text_citation = bool(quote) and not quote.startswith("[")
+            if quote_verified is True and is_text_citation:
+                tier = "green"
+                match_details += " (auto-confirmed: model quoted a verbatim source string)"
+
+        # Apply learned threshold adjustments — runs AFTER the citation
+        # promotion above so the more specific "verified quote" reason wins
+        # the match_details slot when both would have applied.
         suppression = learned_suppressions.get(field)
         if suppression == "suppress_yellow" and tier == "yellow":
             tier = "green"

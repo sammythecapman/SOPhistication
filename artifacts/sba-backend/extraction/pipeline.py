@@ -15,7 +15,7 @@ import pdfplumber
 import anthropic
 
 from .ner_engine import load_ner_model, run_ner, merge_ner_results, format_ner_hints
-from .schemas import analyze_deal_structure, build_schema, extract_fields
+from .schemas import analyze_deal_structure, build_schema, extract_fields  # noqa: F401
 from .formatting import apply_field_formatting
 from .regex_fallbacks import regex_extract_critical_fields
 from .confidence import score_extracted_fields
@@ -171,36 +171,24 @@ def run_extraction_pipeline(
     if loan_program:
         raw_sources["LoanType"] = "[deal_analysis]"
 
-    # ── Stage 5: Confidence Scoring ──
-    update_stage("validating", "Scoring extraction confidence", 75)
-    confidence_scores: dict = {}
-    ner_warnings: list = []
-    if ner_entities:
-        try:
-            import db as _db
-            learned = _db.get_learned_suppressions()
-        except Exception:
-            learned = {}
-        confidence_scores = score_extracted_fields(
-            raw_data, ner_entities, terms_text, learned_suppressions=learned
-        )
-        # Build legacy ner_warnings list from RED scores for backward compat
-        ner_warnings = [
-            f"⛔ HALLUCINATION RISK: '{f}' value '{s['value']}' was NOT FOUND in source text."
-            for f, s in confidence_scores.items()
-            if s["confidence_tier"] == "red"
-        ]
-
     # ── Source citations — process supervision ──
     # Build the full per-field citations dict (covers every populated field,
-    # including non-scored ones like amounts/dates/addresses), then merge the
-    # subset for SCORED_FIELDS into confidence_scores so the UI's existing
-    # confidence cards can show them too.
+    # including non-scored ones like amounts/dates/addresses) BEFORE confidence
+    # scoring, because the scorer now consults verified citations to decide
+    # whether to promote YELLOW → GREEN (see confidence.score_extracted_fields).
     field_sources: Dict[str, Dict[str, Any]] = {}
     for field, value in raw_data.items():
         if not value or not str(value).strip():
             continue
         quote = raw_sources.get(field, "") or ""
+        # `quote_verified` (strong signal) is True only when the model's
+        # literal quote appears in source text. It is used by the
+        # confidence scorer for YELLOW → GREEN promotion. `verified` (the
+        # legacy weaker signal, True/False/None) also accepts a value-only
+        # fallback to keep "Unverified quote" UI warnings rare under
+        # whitespace-noisy PDFs — but that fallback is too weak to count
+        # as independent provenance for promotion.
+        quote_verified = False
         if quote in ("[regex_fallback]", "[deal_analysis]"):
             # Pipeline-internal sentinels for non-textual provenance:
             # `[regex_fallback]` = filled by extraction.regex_fallbacks
@@ -213,10 +201,42 @@ def run_extraction_pipeline(
             verified = _verify_quote_in_source(
                 quote, str(value), terms_text, memo_text,
             )
+            quote_verified = _quote_substring_in_source(
+                quote, terms_text, memo_text,
+            )
         else:
             verified = None
-        field_sources[field] = {"quote": quote, "verified": verified}
+        field_sources[field] = {
+            "quote": quote,
+            "verified": verified,
+            "quote_verified": quote_verified,
+        }
 
+    # ── Stage 5: Confidence Scoring ──
+    update_stage("validating", "Scoring extraction confidence", 75)
+    confidence_scores: dict = {}
+    ner_warnings: list = []
+    if ner_entities:
+        try:
+            import db as _db
+            learned = _db.get_learned_suppressions()
+        except Exception:
+            learned = {}
+        confidence_scores = score_extracted_fields(
+            raw_data, ner_entities, terms_text,
+            learned_suppressions=learned,
+            field_sources=field_sources,
+        )
+        # Build legacy ner_warnings list from RED scores for backward compat
+        ner_warnings = [
+            f"⛔ HALLUCINATION RISK: '{f}' value '{s['value']}' was NOT FOUND in source text."
+            for f, s in confidence_scores.items()
+            if s["confidence_tier"] == "red"
+        ]
+
+    # Merge the per-field citations dict (subset for SCORED_FIELDS) into the
+    # confidence_scores entries so the UI's existing confidence cards can
+    # surface both the model's quote and its verification status.
     for field, entry in confidence_scores.items():
         src = field_sources.get(field, {"quote": "", "verified": None})
         # `model_cited_source` shows the actual quote (or "" if regex-filled
@@ -289,6 +309,25 @@ def _substring_after_collapse(needle: str, *texts: str) -> bool:
     return False
 
 
+def _quote_substring_in_source(quote: str, *texts: str) -> bool:
+    """
+    Strict Tier-1 check: is the model's literal quote a whitespace-collapsed,
+    case-insensitive substring of any source text?
+
+    This is the STRONG provenance signal — the model said exactly what the
+    document says. Used by the confidence scorer to decide YELLOW → GREEN
+    promotion. Distinguished from `_verify_quote_in_source` because the
+    latter also accepts a Tier-2 value-fallback that is too weak to count
+    as independent provenance for promotion (it's basically the same
+    information that already raised the field to YELLOW in the first place).
+    """
+    if not quote or not quote.strip():
+        return False
+    # Strip the ellipsis truncation marker so truncated quotes can verify.
+    quote_stripped = quote[:-1] if quote.endswith("…") else quote
+    return _substring_after_collapse(quote_stripped, *texts)
+
+
 def _verify_quote_in_source(
     quote: str, value: str, *texts: str,
 ) -> Optional[bool]:
@@ -300,6 +339,8 @@ def _verify_quote_in_source(
     documents would otherwise cause spurious mismatches):
 
       Tier 1 — exact citation: does `quote` appear in any of `texts`?
+                (See `_quote_substring_in_source` for the standalone strict
+                check used by the confidence scorer.)
       Tier 2 — value fallback: does `value` (the extracted datum, with the
                citation's label/punctuation stripped away) appear in any of
                `texts`?
@@ -311,9 +352,6 @@ def _verify_quote_in_source(
     falsely marked Unverified Quote even though the underlying datum is
     clearly supported.
 
-    If the quote ends with the truncation sentinel "…" (added by the
-    validator when a quote exceeds 200 chars), we strip it before matching.
-
     Returns:
       - True  if either tier matches
       - False if the quote is non-empty AND neither tier matches
@@ -321,9 +359,7 @@ def _verify_quote_in_source(
     """
     if not quote or not quote.strip():
         return None
-    # Strip the ellipsis truncation marker so truncated quotes can verify.
-    quote_stripped = quote[:-1] if quote.endswith("…") else quote
-    if _substring_after_collapse(quote_stripped, *texts):
+    if _quote_substring_in_source(quote, *texts):
         return True
     # Fallback: the model often paraphrases citations; if the actual
     # extracted value is a substring of the source, the citation is
