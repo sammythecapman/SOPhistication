@@ -1,0 +1,32 @@
+Answers in order:
+
+1. YES, copy attached_assets/terms_definitions_1777836298950.csv to artifacts/sba-backend/extraction/terms_definitions.csv as part of this work. Use git mv if it preserves history cleanly; otherwise plain copy is fine. After the copy, confirm the file is committed to the repo at the canonical path (not just present in attached_assets, which is a Replit upload artifact and shouldn't be the source of truth).
+
+   For lenders.csv: yes, use the graceful-missing-file path. Stub the loader, log the warning at module load as specified, return None for all lookups. I'll provide lenders.csv in a separate prompt.
+
+2. OPTION A. Add the eight new keys to the DealStructure Pydantic model in extraction/models.py.
+
+   Reasoning: extra="forbid" exists for a reason — it's the schema contract that protects every downstream consumer. Bypassing it with an overlay creates two parallel contracts (the validated one and the wire-through one) and the divergence will rot. Future-me reading the code in six months would have to know that some keys are validated and some aren't, with no visible signal which is which. That's exactly the technical debt this refactor is trying to retire.
+
+   The "minimum viable diff" rule is about not refactoring unrelated code, not about avoiding the right file. models.py is where deal-structure schema lives; that IS the right file for this change.
+
+   So: add models.py to your in-scope file list for this prompt. Add the eight new keys to DealStructure with the conservative defaults from my original prompt. Keep extra="forbid".
+
+   Caveat: if you find any other consumer of DealStructure besides schemas.py and pipeline.py, list them in your final summary so I can confirm the new fields don't break their assumptions. Don't modify those consumers in this prompt — just flag them.
+
+3. WIRE-THROUGH MAPPING — mostly right, two corrections:
+
+   borrower_count → 2 if has_second_borrower else 1                 ✓ confirmed
+   company_guarantor_count → corporate_guarantor_count               ✓ confirmed (rename in transit; the CSV uses 'company_guarantor_count' which is the firm's terminology, but the existing field uses 'corporate' — do NOT rename the existing field, just wire it through)
+   personal_guarantor_count → pass through verbatim                  ✓ confirmed
+   has_lease → has_landlord_lease                                    ✓ confirmed
+   deal_involves_real_estate → has_real_estate                       ✓ confirmed
+   requires_equity_injection → default False + TODO                  ✓ confirmed
+   requires_life_insurance → default False + TODO                    ✓ confirmed
+   has_interest_reserve → default False + TODO                       ✓ confirmed
+
+   IMPORTANT addition: the new keys are independently named, not aliases. Both old and new names should be present in the DealStructure output simultaneously. So `corporate_guarantor_count` AND `company_guarantor_count` both exist in the dump, with the same value. `has_real_estate` AND `deal_involves_real_estate` both exist, with the same value. Same for has_landlord_lease/has_lease. This preserves backward compatibility for any existing consumer reading the old names while letting the new applicable_when conditions read the new names that match the CSV.
+
+   Implementation pattern: add the new fields to DealStructure as plain fields with their defaults, and populate them in a model_validator (mode='after') that copies from the existing fields. That keeps the wire-through logic inside the model itself rather than scattered across schemas.py.
+
+PROCEED with Tasks 1-5 as originally specified, with these three answers applied. Add models.py to the in-scope list. Everything else (don't modify pipeline.py, don't touch the frontend, don't regenerate clients, etc.) stands.
