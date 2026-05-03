@@ -7,6 +7,7 @@ SBALoanName,SBA Loan Info,SBA Loan Name,string,terms_conditions|authorization,al
 SBAApprovalDate,SBA Loan Info,SBA Approval Date,date,terms_conditions|authorization,all,,TRUE,SBAApprovalDate
 MaturityDate,SBA Loan Info,Maturity Date,date,terms_conditions|note,all,,TRUE,MaturityDate
 InitialPaymentDate,SBA Loan Info,Initial Payment Date,date,note|terms_conditions|authorization,all,,TRUE,InitialPaymentDate
+State,SBA Loan Info,Deal State,string,terms_conditions|authorization,all,,TRUE,State
 FirstPaymentAmountShort,SBA Loan Info,First Payment Amount (Numeric),currency,terms_conditions|note,all,,TRUE,FirstPaymentAmountShort
 FirstPaymentAmountLong,SBA Loan Info,First Payment Amount (Words),currency_words,terms_conditions|note,all,,TRUE,FirstPaymentAmountLong
 GuarantyAmountShort,SBA Loan Info,Guaranty Amount (Numeric),currency,terms_conditions|authorization,all,,TRUE,GuarantyAmountShort

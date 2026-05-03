@@ -22,9 +22,9 @@ DEFAULTS = {
 
 
 class TestFieldRegistry(unittest.TestCase):
-    def test_csv_loads_102_definitions(self):
+    def test_csv_loads_103_definitions(self):
         all_defs = FieldRegistry.get_all()
-        self.assertEqual(len(all_defs), 102)
+        self.assertEqual(len(all_defs), 103)
         self.assertTrue(all(isinstance(d, FieldDefinition) for d in all_defs))
 
     def test_categories_in_order_no_duplicates(self):

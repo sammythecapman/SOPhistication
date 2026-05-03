@@ -23,33 +23,6 @@ from .prompts.registry import load_prompt
 logger = logging.getLogger(__name__)
 
 
-# ── Legacy-orphan fallback ──
-# Keys still emitted by the legacy build_schema() that are NOT yet in
-# extraction/terms_definitions.csv. Each remaining entry has been
-# triaged and is being intentionally retained pending a firm decision.
-#
-# Removed in the field-registry rollout follow-up (now defined in CSV):
-#   SpreadShort, SpreadLong, InitialRateShort, InitialRateLong,
-#   MaturityDate, InitialPaymentDate
-#
-# Removed as confirmed dead (no readers anywhere in the codebase):
-#   DealType (SharePoint payload reads deal_structure.deal_type instead),
-#   CommercialRealEstate, ResidentialRealEstate, Construction
-_LEGACY_ORPHAN_ALWAYS = {
-    "State": "",
-}
-
-_ORPHAN_FIELDS = sorted(_LEGACY_ORPHAN_ALWAYS)
-
-if _ORPHAN_FIELDS:
-    logger.warning(
-        "schemas.build_schema: %d orphan field(s) not in terms_definitions.csv; "
-        "preserved as legacy fallback (decide whether to add to CSV or remove "
-        "from codebase): %s",
-        len(_ORPHAN_FIELDS), _ORPHAN_FIELDS,
-    )
-
-
 def _claude_with_retry(client, max_retries: int = 5, **kwargs):
     """
     Call client.messages.create with exponential backoff on overloaded (529) errors.
@@ -167,10 +140,6 @@ def build_schema(deal: dict) -> dict:
     (DERIVED is post-processed by the formatting layer; LOOKUP is
     resolved by the lender registry post-extraction).
 
-    Legacy-orphan keys (see _LEGACY_ORPHAN_* above) are added on top so
-    downstream code that still references them continues to work. The
-    orphan list is logged as a warning at module load.
-
     NOTE: LoanType is intentionally omitted. It is derived from the
     deal-analysis stage's `loan_program` (validated by the DealStructure
     Literal) and injected into raw_data by the pipeline after
@@ -182,9 +151,6 @@ def build_schema(deal: dict) -> dict:
         if d.data_type in ("DERIVED", "LOOKUP"):
             continue
         fields[d.field_name] = ""
-
-    # Legacy-orphan fallback (only "State" remains pending a firm decision).
-    fields.update(_LEGACY_ORPHAN_ALWAYS)
 
     return fields
 
