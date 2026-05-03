@@ -1,0 +1,234 @@
+GROUND RULES FOR THIS SESSION:
+- Read the files I list before changing anything. Confirm what you found.
+- Minimum viable diff. Do not refactor adjacent code.
+- Do not run `pnpm install`, `pnpm build`, `vite dev`, or restart the dev server unless I ask.
+- Do not regenerate generated clients (lib/api-zod, lib/api-client-react). Those will be batched at the end of a later prompt.
+- Do not modify Claude prompt templates or model selection.
+- Do not touch file_security.py's encryption or token logic.
+- After each task within this prompt, list the files you changed before moving on.
+- If a step is ambiguous or you're tempted to make a judgment call I didn't authorize, stop and ask.
+- If something breaks, do not "fix forward." Tell me and I'll revert via git.
+
+---
+
+CONTEXT
+
+I've added two new files at the repo root of artifacts/sba-backend/extraction/:
+  - terms_definitions.csv (98 rows, 17 categories, derived from our firm's 7(a) Database of Terms)
+  - lenders.csv (firm lender registry — I'll provide this; if it's not present yet, stub the loader to handle a missing file gracefully and log a warning)
+
+Goal of this prompt: replace hardcoded field lists in schemas.py with a data-driven field registry sourced from terms_definitions.csv, plus add a small lender registry that resolves LOOKUP-type fields without invoking Claude. This is foundational — every later prompt depends on it.
+
+---
+
+READ FIRST (and summarize what you found before making changes)
+
+1. artifacts/sba-backend/extraction/schemas.py — current dynamic schema builder and analyze_deal_structure() return shape
+2. artifacts/sba-backend/extraction/pipeline.py — orchestrator (read only, do not modify in this prompt)
+3. artifacts/sba-backend/extraction/terms_definitions.csv — the new schema source of truth
+4. artifacts/sba-backend/extraction/lenders.csv — the lender registry (may not exist yet — handle gracefully)
+
+Confirm in your response that you've read these and briefly summarize the existing analyze_deal_structure() output keys and the existing field-list source in schemas.py before proceeding.
+
+---
+
+TASK 1: Field registry
+
+Create artifacts/sba-backend/extraction/field_registry.py.
+
+CSV column layout (in this exact order):
+  field_name, category, display_name, data_type, source_documents,
+  applicable_deal_types, applicable_when, required, sharepoint_column_name
+
+Define a Pydantic model `FieldDefinition` with these typed fields:
+  - field_name: str
+  - category: str
+  - display_name: str
+  - data_type: str   (one of: 'string', 'currency', 'currency_words', 'date', 'percent', 'enum', 'DERIVED', 'LOOKUP')
+  - enum_values: Optional[List[str]] = None
+  - source_documents: List[str]   (parsed from pipe-delimited CSV cell; empty list if cell is empty)
+  - applicable_deal_types: List[str]   (pipe-delimited; the literal value 'all' becomes ['all'])
+  - applicable_when: Optional[str] = None   (None if CSV cell is empty)
+  - required: bool   (parse 'TRUE'/'FALSE' case-insensitively)
+  - sharepoint_column_name: Optional[str] = None
+
+PARSE RULE for data_type with inline enum values:
+  When the CSV cell starts with 'enum:', split on ':' once. Set data_type='enum' and parse the suffix (pipe-delimited) into enum_values. Example: 'enum:LLC|Corporation' becomes data_type='enum', enum_values=['LLC','Corporation']. For all other data_type values, enum_values stays None.
+
+Define a `FieldRegistry` class loaded once at import time (module-level singleton). Expose:
+
+  - get_all() -> List[FieldDefinition]
+      Returns all fields in CSV order. Preserve order — it matters for UI rendering.
+
+  - get(field_name: str) -> FieldDefinition
+      Raises KeyError if not found.
+
+  - fields_for_deal(deal_analysis: dict) -> List[FieldDefinition]
+      Filters get_all() by evaluating applicable_when against deal_analysis.
+      Fields with applicable_when=None are always applicable.
+      Uses the safe evaluator from Task 2.
+
+  - fields_in_document(doc_type: str) -> List[FieldDefinition]
+      Returns fields whose source_documents list contains doc_type.
+      DERIVED and LOOKUP fields (which have empty source_documents) are excluded — they aren't extracted from any document.
+
+  - categories() -> List[str]
+      Returns unique category names in CSV order (first occurrence wins).
+
+  - is_derived(field_name: str) -> bool
+      True iff data_type == 'DERIVED'.
+
+  - is_lookup(field_name: str) -> bool
+      True iff data_type == 'LOOKUP'.
+
+Use csv.DictReader with utf-8 encoding. Strip whitespace on every cell read. Treat empty cells as None/[] per the field's type.
+
+---
+
+TASK 2: Safe applicable_when evaluator
+
+Inside field_registry.py (or a sibling module if you prefer), implement a small condition evaluator. DO NOT use eval(), exec(), ast.literal_eval, or any dynamic execution.
+
+Grammar (recursive descent or shunting yard — pick whichever is shorter):
+
+  expr     := or_expr
+  or_expr  := and_expr ('or' and_expr)*
+  and_expr := comparison ('and' comparison)*
+  comparison := var OP value
+              | var 'in' '[' value (',' value)* ']'
+  OP       := '==' | '!=' | '>=' | '<=' | '>' | '<'
+  var      := one of the allowlisted variable names below
+  value    := integer literal | string literal (single quotes) | boolean literal (True/False)
+
+ALLOWLIST of variable names (reject any other variable with ValueError):
+  borrower_count, company_guarantor_count, personal_guarantor_count,
+  has_lease, deal_involves_real_estate, requires_equity_injection,
+  requires_life_insurance, has_interest_reserve, deal_type
+
+Behavior:
+  - Empty/None applicable_when → returns True.
+  - Unknown variable name → raises ValueError with the variable name in the message.
+  - Variable missing from deal_analysis dict → raises KeyError with the variable name.
+  - Type mismatch (e.g. comparing string to int) → raises TypeError.
+  - Whitespace insensitive.
+
+Examples that must pass tests:
+  "borrower_count >= 2"                         against {borrower_count: 2}    → True
+  "company_guarantor_count >= 3"                against {company_guarantor_count: 1}    → False
+  "deal_type == 'construction'"                 against {deal_type: 'construction'}    → True
+  "deal_type in ['asset_purchase','stock_purchase']"  against {deal_type: 'asset_purchase'}  → True
+  "has_lease == True"                           against {has_lease: True}    → True
+  "requires_equity_injection == True and personal_guarantor_count >= 1"  → compound
+
+---
+
+TASK 3: Lender registry
+
+Create artifacts/sba-backend/extraction/lender_registry.py.
+
+Expected CSV columns at artifacts/sba-backend/extraction/lenders.csv:
+  lender_name, lender_description, lender_address_1, lender_address_2,
+  lender_signer_name, lender_signer_title, aliases
+
+The aliases column is pipe-delimited and may be empty.
+
+Define a Pydantic model `LenderRecord` with all seven fields (aliases as List[str]).
+
+Define `LenderRegistry` (singleton, loaded at import time) exposing:
+
+  - lookup(lender_name: str) -> Optional[LenderRecord]
+      Match in this order:
+        1. Exact match on lender_name (case-insensitive, whitespace-collapsed)
+        2. Match against any alias (case-insensitive, whitespace-collapsed)
+      Returns None if no match.
+
+  - all_lenders() -> List[LenderRecord]
+
+  - canonical_names() -> List[str]
+
+If lenders.csv is missing, log a warning at module load ("lenders.csv not found at <path>; LOOKUP fields will resolve to None until the file is added") and have lookup() return None for every input. Do not crash the app on missing file.
+
+Normalize for comparison: lowercase + collapse internal whitespace runs to a single space + strip. Do NOT modify what's returned to callers — only the comparison key is normalized.
+
+---
+
+TASK 4: Refactor schemas.py to consume FieldRegistry
+
+The existing analyze_deal_structure() in schemas.py returns a dict that downstream code depends on. Preserve every existing key exactly — names, types, and value semantics. Do not rename, remove, or restructure existing keys.
+
+Extend the analyze_deal_structure() return dict with these NEW keys:
+  borrower_count: int                           (default 1)
+  company_guarantor_count: int                  (default 0)
+  personal_guarantor_count: int                 (default 0)
+  has_lease: bool                               (default False)
+  deal_involves_real_estate: bool               (default False)
+  requires_equity_injection: bool               (default False)
+  requires_life_insurance: bool                 (default False)
+  has_interest_reserve: bool                    (default False)
+
+For each new key:
+  - If existing analysis logic ALREADY infers something equivalent (e.g. guarantor counts may already be detected per replit.md), wire it through to the new key — do not duplicate inference.
+  - If not yet inferable from existing logic, set to the conservative default above and add a `# TODO: infer from T&Cs in a later prompt` comment on that line.
+  - Do NOT modify the Claude prompt template used by analyze_deal_structure() in this prompt. Inference improvements come later.
+
+Refactor the dynamic schema builder in schemas.py so the canonical list of extractable fields comes from FieldRegistry.fields_for_deal(deal_analysis), filtered to exclude is_derived() and is_lookup() fields (those aren't extraction targets). Where schemas.py currently hardcodes field names, types, or formatting hints, replace those with reads from the corresponding FieldDefinition.
+
+If you find existing field names in schemas.py that don't appear in terms_definitions.csv, do NOT silently drop them. Instead: log a warning at startup listing each orphan, and keep the existing hardcoded behavior for those fields as a fallback. Surface the list in your final summary so I can decide whether to add them to the CSV or remove them from the codebase.
+
+---
+
+TASK 5: Tests
+
+Create artifacts/sba-backend/tests/test_field_registry.py with tests covering:
+  - CSV loads successfully and produces 98 FieldDefinitions
+  - Categories are returned in CSV order, no duplicates
+  - get('LoanAmountShort') returns the expected definition
+  - fields_in_document('terms_conditions') returns a non-empty list and excludes DERIVED/LOOKUP fields
+  - is_derived('Month') is True; is_derived('LoanAmountShort') is False
+  - is_lookup('LenderSignerName') is True; is_lookup('LenderName') is False
+  - data_type 'enum:LLC|Corporation' parses to data_type='enum', enum_values=['LLC','Corporation']
+  - fields_for_deal({borrower_count: 1, ...defaults}) excludes Borrower2Name
+  - fields_for_deal({borrower_count: 2, ...defaults}) includes Borrower2Name
+  - fields_for_deal({deal_type: 'construction', ...}) includes GeneralContractorName
+  - fields_for_deal({deal_type: 'working_capital', ...}) excludes GeneralContractorName
+
+Create artifacts/sba-backend/tests/test_condition_evaluator.py covering:
+  - Empty/None condition returns True
+  - Simple equality, inequality, >=, <=, >, 
+  - 'in' with list of strings
+  - Compound 'and', compound 'or'
+  - Boolean literal comparison (has_lease == True)
+  - Unknown variable raises ValueError
+  - Missing variable in context raises KeyError
+  - eval/exec are NOT used (assert via inspect or grep that the source contains neither)
+
+Create artifacts/sba-backend/tests/test_lender_registry.py covering:
+  - Exact match (case-sensitive)
+  - Case-insensitive match ('live oak banking company' finds 'Live Oak Banking Company')
+  - Whitespace-collapsed match ('Live  Oak   Bank' finds 'Live Oak Bank')
+  - Alias match
+  - No match returns None
+  - Missing lenders.csv: registry loads, lookup() returns None, warning logged
+
+Run only the new test files. Do NOT run the full test suite. Do NOT install new dependencies — Pydantic is already in pyproject.toml.
+
+---
+
+CONSTRAINTS RECAP
+
+- Do NOT modify pipeline.py, app.py, db.py, or any frontend file in this prompt.
+- Do NOT regenerate lib/api-spec, lib/api-zod, or lib/api-client-react.
+- Do NOT modify file_security.py.
+- Do NOT modify Claude prompt templates.
+- Do NOT touch SharePoint code.
+- The OpenAPI spec changes come in a later prompt — leave it alone.
+
+---
+
+DELIVERABLES IN YOUR FINAL MESSAGE
+
+1. List every file created or modified.
+2. Paste the orphan field list from Task 4 (fields in schemas.py that aren't in terms_definitions.csv).
+3. Paste pytest output for the three new test files.
+4. Confirm analyze_deal_structure() still returns all of its original keys (paste them as a list).
+5. Flag anything you had to guess at or where you made a judgment call I didn't authorize.

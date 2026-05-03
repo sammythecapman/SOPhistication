@@ -1,0 +1,99 @@
+field_name,category,display_name,data_type,source_documents,applicable_deal_types,applicable_when,required,sharepoint_column_name
+Month,Dating the Doc Set,Execution Month,DERIVED,,all,,FALSE,Month
+NotaryBlockMonth,Dating the Doc Set,Notary Block Month,DERIVED,,all,,FALSE,NotaryBlockMonth
+Year,Dating the Doc Set,Execution Year,DERIVED,,all,,FALSE,Year
+SBALoanNumber,SBA Loan Info,SBA Loan Number,string,terms_conditions|authorization,all,,TRUE,SBALoanNumber
+SBALoanName,SBA Loan Info,SBA Loan Name,string,terms_conditions|authorization,all,,TRUE,SBALoanName
+SBAApprovalDate,SBA Loan Info,SBA Approval Date,date,terms_conditions|authorization,all,,TRUE,SBAApprovalDate
+FirstPaymentAmountShort,SBA Loan Info,First Payment Amount (Numeric),currency,terms_conditions|note,all,,TRUE,FirstPaymentAmountShort
+FirstPaymentAmountLong,SBA Loan Info,First Payment Amount (Words),currency_words,terms_conditions|note,all,,TRUE,FirstPaymentAmountLong
+GuarantyAmountShort,SBA Loan Info,Guaranty Amount (Numeric),currency,terms_conditions|authorization,all,,TRUE,GuarantyAmountShort
+GuarantyAmountLong,SBA Loan Info,Guaranty Amount (Words),currency_words,terms_conditions|authorization,all,,TRUE,GuarantyAmountLong
+Borrower1Name,Borrower 1,Borrower 1 Name,string,terms_conditions|organizational_docs,all,,TRUE,Borrower1Name
+Borrower1Description,Borrower 1,Borrower 1 Entity Description,string,terms_conditions|organizational_docs,all,,TRUE,Borrower1Description
+Borrower1SignerName,Borrower 1,Borrower 1 Signer Name,string,organizational_docs|resolution,all,,TRUE,Borrower1SignerName
+Borrower1SignerTitle,Borrower 1,Borrower 1 Signer Title,string,organizational_docs|resolution,all,,TRUE,Borrower1SignerTitle
+Borrower1StateOfOrganization,Borrower 1,Borrower 1 State of Organization,string,organizational_docs|terms_conditions,all,,TRUE,Borrower1StateOfOrganization
+Borrower1DepositAccountNumber,Borrower 1,Borrower 1 Deposit Account Number,string,deposit_account_verification,all,,FALSE,Borrower1DepositAccountNumber
+LimitedLiabilityCompany/Corporation,Borrower 1,Borrower 1 Entity Type,enum:LLC|Corporation,organizational_docs|terms_conditions,all,,TRUE,EntityType
+NoticeAddress1,Borrower 1,Notice Address Line 1,string,terms_conditions|organizational_docs,all,,TRUE,NoticeAddress1
+NoticeAddress2,Borrower 1,Notice Address Line 2,string,terms_conditions|organizational_docs,all,,FALSE,NoticeAddress2
+Borrower2Name,Borrower 2,Borrower 2 Name,string,terms_conditions|organizational_docs,all,borrower_count >= 2,FALSE,Borrower2Name
+Borrower2Description,Borrower 2,Borrower 2 Entity Description,string,terms_conditions|organizational_docs,all,borrower_count >= 2,FALSE,Borrower2Description
+Borrower2SignerName,Borrower 2,Borrower 2 Signer Name,string,organizational_docs|resolution,all,borrower_count >= 2,FALSE,Borrower2SignerName
+Borrower2SignerTitle,Borrower 2,Borrower 2 Signer Title,string,organizational_docs|resolution,all,borrower_count >= 2,FALSE,Borrower2SignerTitle
+Borrower2StateOfOrganization,Borrower 2,Borrower 2 State of Organization,string,organizational_docs|terms_conditions,all,borrower_count >= 2,FALSE,Borrower2StateOfOrganization
+Borrower2DepositAccountNumber,Borrower 2,Borrower 2 Deposit Account Number,string,deposit_account_verification,all,borrower_count >= 2,FALSE,Borrower2DepositAccountNumber
+BorrowerAddress1,Subject Property Details,Borrower Principal Place of Business Line 1,string,terms_conditions|organizational_docs|title_commitment|lease,all,,TRUE,BorrowerAddress1
+BorrowerAddress2,Subject Property Details,Borrower Principal Place of Business Line 2,string,terms_conditions|organizational_docs|title_commitment|lease,all,,FALSE,BorrowerAddress2
+PropertyAPN,Subject Property Details,Property APN,string,title_commitment|terms_conditions,all,deal_involves_real_estate == True,FALSE,PropertyAPN
+PropertyCity,Subject Property Details,Property City,string,terms_conditions|title_commitment,all,deal_involves_real_estate == True,FALSE,PropertyCity
+PropertyCounty,Subject Property Details,Property County,string,title_commitment|terms_conditions,all,deal_involves_real_estate == True,FALSE,PropertyCounty
+PropertyState,Subject Property Details,Property State,string,terms_conditions|title_commitment,all,deal_involves_real_estate == True,FALSE,PropertyState
+TitleCompanyName,Subject Property Details,Title Company Name,string,title_commitment,all,deal_involves_real_estate == True,FALSE,TitleCompanyName
+Mortgages/DeedsOfTrust,Subject Property Details,Mortgage or Deed of Trust (by state),enum,title_commitment|terms_conditions,all,deal_involves_real_estate == True,FALSE,MortgageDeedOfTrustType
+MortgageDOT_Title_Singular,Subject Property Details,Mortgage/DOT Title (Singular),DERIVED,,all,deal_involves_real_estate == True,FALSE,MortgageDOTTitleSingular
+MortgageDOT_Title_Plural,Subject Property Details,Mortgage/DOT Title (Plural),DERIVED,,all,deal_involves_real_estate == True,FALSE,MortgageDOTTitlePlural
+LoanAmountLong,Loan Details,Loan Amount (Words),currency_words,terms_conditions|authorization|note,all,,TRUE,LoanAmountLong
+LoanAmountShort,Loan Details,Loan Amount (Numeric),currency,terms_conditions|authorization|note,all,,TRUE,LoanAmountShort
+Spread,Loan Details,Interest Rate Spread,percent,terms_conditions|authorization,all,,TRUE,Spread
+InitialRate,Loan Details,Initial Interest Rate,percent,terms_conditions|note,all,,TRUE,InitialRate
+CompanyGuarantor1Name,Company Guarantor 1,Company Guarantor 1 Name,string,terms_conditions|guaranty|organizational_docs,all,company_guarantor_count >= 1,FALSE,CompanyGuarantor1Name
+CompanyGuarantor1Description,Company Guarantor 1,Company Guarantor 1 Entity Description,string,terms_conditions|guaranty|organizational_docs,all,company_guarantor_count >= 1,FALSE,CompanyGuarantor1Description
+CompanyGuarantor1Signor,Company Guarantor 1,Company Guarantor 1 Signer Name,string,organizational_docs|resolution,all,company_guarantor_count >= 1,FALSE,CompanyGuarantor1Signor
+CompanyGuarantor1Title,Company Guarantor 1,Company Guarantor 1 Signer Title,string,organizational_docs|resolution,all,company_guarantor_count >= 1,FALSE,CompanyGuarantor1Title
+CompanyGuarantor1StateOfOrganization,Company Guarantor 1,Company Guarantor 1 State of Organization,string,organizational_docs|terms_conditions,all,company_guarantor_count >= 1,FALSE,CompanyGuarantor1StateOfOrganization
+CompanyGuarantor2Name,Company Guarantor 2,Company Guarantor 2 Name,string,terms_conditions|guaranty|organizational_docs,all,company_guarantor_count >= 2,FALSE,CompanyGuarantor2Name
+CompanyGuarantor2Description,Company Guarantor 2,Company Guarantor 2 Entity Description,string,terms_conditions|guaranty|organizational_docs,all,company_guarantor_count >= 2,FALSE,CompanyGuarantor2Description
+CompanyGuarantor2Signor,Company Guarantor 2,Company Guarantor 2 Signer Name,string,organizational_docs|resolution,all,company_guarantor_count >= 2,FALSE,CompanyGuarantor2Signor
+CompanyGuarantor2Title,Company Guarantor 2,Company Guarantor 2 Signer Title,string,organizational_docs|resolution,all,company_guarantor_count >= 2,FALSE,CompanyGuarantor2Title
+CompanyGuarantor2StateOfOrganization,Company Guarantor 2,Company Guarantor 2 State of Organization,string,organizational_docs|terms_conditions,all,company_guarantor_count >= 2,FALSE,CompanyGuarantor2StateOfOrganization
+CompanyGuarantor3Name,Company Guarantor 3,Company Guarantor 3 Name,string,terms_conditions|guaranty|organizational_docs,all,company_guarantor_count >= 3,FALSE,CompanyGuarantor3Name
+CompanyGuarantor3Description,Company Guarantor 3,Company Guarantor 3 Entity Description,string,terms_conditions|guaranty|organizational_docs,all,company_guarantor_count >= 3,FALSE,CompanyGuarantor3Description
+CompanyGuarantor3Signor,Company Guarantor 3,Company Guarantor 3 Signer Name,string,organizational_docs|resolution,all,company_guarantor_count >= 3,FALSE,CompanyGuarantor3Signor
+CompanyGuarantor3Title,Company Guarantor 3,Company Guarantor 3 Signer Title,string,organizational_docs|resolution,all,company_guarantor_count >= 3,FALSE,CompanyGuarantor3Title
+CompanyGuarantor3StateOfOrganization,Company Guarantor 3,Company Guarantor 3 State of Organization,string,organizational_docs|terms_conditions,all,company_guarantor_count >= 3,FALSE,CompanyGuarantor3StateOfOrganization
+CompanyGuarantor4Name,Company Guarantor 4,Company Guarantor 4 Name,string,terms_conditions|guaranty|organizational_docs,all,company_guarantor_count >= 4,FALSE,CompanyGuarantor4Name
+CompanyGuarantor4Description,Company Guarantor 4,Company Guarantor 4 Entity Description,string,terms_conditions|guaranty|organizational_docs,all,company_guarantor_count >= 4,FALSE,CompanyGuarantor4Description
+CompanyGuarantor4Signor,Company Guarantor 4,Company Guarantor 4 Signer Name,string,organizational_docs|resolution,all,company_guarantor_count >= 4,FALSE,CompanyGuarantor4Signor
+CompanyGuarantor4Title,Company Guarantor 4,Company Guarantor 4 Signer Title,string,organizational_docs|resolution,all,company_guarantor_count >= 4,FALSE,CompanyGuarantor4Title
+CompanyGuarantor4StateOfOrganization,Company Guarantor 4,Company Guarantor 4 State of Organization,string,organizational_docs|terms_conditions,all,company_guarantor_count >= 4,FALSE,CompanyGuarantor4StateOfOrganization
+PersonalGuarantor1,Personal Guarantors,Personal Guarantor 1 Name,string,terms_conditions|personal_guaranty,all,personal_guarantor_count >= 1,FALSE,PersonalGuarantor1
+PersonalGuarantor2,Personal Guarantors,Personal Guarantor 2 Name,string,terms_conditions|personal_guaranty,all,personal_guarantor_count >= 2,FALSE,PersonalGuarantor2
+PersonalGuarantor3,Personal Guarantors,Personal Guarantor 3 Name,string,terms_conditions|personal_guaranty,all,personal_guarantor_count >= 3,FALSE,PersonalGuarantor3
+PersonalGuarantor4,Personal Guarantors,Personal Guarantor 4 Name,string,terms_conditions|personal_guaranty,all,personal_guarantor_count >= 4,FALSE,PersonalGuarantor4
+GeneralContractorName,Construction Contract Details,General Contractor Name,string,construction_contract,all,deal_type == 'construction',FALSE,GeneralContractorName
+GeneralContractorDescription,Construction Contract Details,General Contractor Entity Description,string,construction_contract,all,deal_type == 'construction',FALSE,GeneralContractorDescription
+GeneralContractorAddress1,Construction Contract Details,General Contractor Address Line 1,string,construction_contract,all,deal_type == 'construction',FALSE,GeneralContractorAddress1
+GeneralContractorAddress2,Construction Contract Details,General Contractor Address Line 2,string,construction_contract,all,deal_type == 'construction',FALSE,GeneralContractorAddress2
+ConstructionContractTitle,Construction Contract Details,Construction Contract Title,string,construction_contract,all,deal_type == 'construction',FALSE,ConstructionContractTitle
+ConstructionContractDate,Construction Contract Details,Construction Contract Date,date,construction_contract,all,deal_type == 'construction',FALSE,ConstructionContractDate
+ConstructionContractAmountShort,Construction Contract Details,Construction Contract Amount (Numeric),currency,construction_contract,all,deal_type == 'construction',FALSE,ConstructionContractAmountShort
+ConstructionContractAmountLong,Construction Contract Details,Construction Contract Amount (Words),currency_words,construction_contract,all,deal_type == 'construction',FALSE,ConstructionContractAmountLong
+ConstructionPeriod,Construction Contract Details,Construction Period,string,construction_contract,all,deal_type == 'construction',FALSE,ConstructionPeriod
+ArchitectName,Architect Contract Details,Architect Name,string,architect_contract,all,deal_type == 'construction',FALSE,ArchitectName
+ArchitectDescription,Architect Contract Details,Architect Entity Description,string,architect_contract,all,deal_type == 'construction',FALSE,ArchitectDescription
+ArchitectContractTitle,Architect Contract Details,Architect Contract Title,string,architect_contract,all,deal_type == 'construction',FALSE,ArchitectContractTitle
+ArchitectContractDate,Architect Contract Details,Architect Contract Date,date,architect_contract,all,deal_type == 'construction',FALSE,ArchitectContractDate
+ArchitectAddress1,Architect Contract Details,Architect Address Line 1,string,architect_contract,all,deal_type == 'construction',FALSE,ArchitectAddress1
+ArchitectAddress2,Architect Contract Details,Architect Address Line 2,string,architect_contract,all,deal_type == 'construction',FALSE,ArchitectAddress2
+SellerName,Seller Details,Seller Name,string,purchase_agreement|terms_conditions,asset_purchase|stock_purchase,deal_type in ['asset_purchase','stock_purchase'],FALSE,SellerName
+SellerDescription,Seller Details,Seller Entity Description,string,purchase_agreement|terms_conditions,asset_purchase|stock_purchase,deal_type in ['asset_purchase','stock_purchase'],FALSE,SellerDescription
+SellerSignerName,Seller Details,Seller Signer Name,string,purchase_agreement|organizational_docs,asset_purchase|stock_purchase,deal_type in ['asset_purchase','stock_purchase'],FALSE,SellerSignerName
+SellerSignerTitle,Seller Details,Seller Signer Title,string,purchase_agreement|organizational_docs,asset_purchase|stock_purchase,deal_type in ['asset_purchase','stock_purchase'],FALSE,SellerSignerTitle
+LeaseAgreementTitle,Lease Details,Lease Agreement Title,string,lease,all,has_lease == True,FALSE,LeaseAgreementTitle
+LeaseDate,Lease Details,Lease Date,date,lease,all,has_lease == True,FALSE,LeaseDate
+LandlordName,Lease Details,Landlord Name,string,lease,all,has_lease == True,FALSE,LandlordName
+LandlordDescription,Lease Details,Landlord Entity Description,string,lease,all,has_lease == True,FALSE,LandlordDescription
+InjectionAmountShort,Equity/Life Ins/Int Reserve,Equity Injection Amount (Numeric),currency,terms_conditions|settlement_sheet,all,requires_equity_injection == True,FALSE,InjectionAmountShort
+InjectionAmountLong,Equity/Life Ins/Int Reserve,Equity Injection Amount (Words),currency_words,terms_conditions|settlement_sheet,all,requires_equity_injection == True,FALSE,InjectionAmountLong
+LifeInsuranceAmountShort,Equity/Life Ins/Int Reserve,Life Insurance Amount (Numeric),currency,terms_conditions|life_insurance_policy,all,requires_life_insurance == True,FALSE,LifeInsuranceAmountShort
+LifeInsuranceAmountLong,Equity/Life Ins/Int Reserve,Life Insurance Amount (Words),currency_words,terms_conditions|life_insurance_policy,all,requires_life_insurance == True,FALSE,LifeInsuranceAmountLong
+InterestReserveAmountShort,Equity/Life Ins/Int Reserve,Interest Reserve Amount (Numeric),currency,terms_conditions,all,has_interest_reserve == True,FALSE,InterestReserveAmountShort
+InterestReserveAmountLong,Equity/Life Ins/Int Reserve,Interest Reserve Amount (Words),currency_words,terms_conditions,all,has_interest_reserve == True,FALSE,InterestReserveAmountLong
+LenderName,Lender Details,Lender Name,string,terms_conditions|authorization,all,,TRUE,LenderName
+LenderDescription,Lender Details,Lender Entity Description,LOOKUP,,all,,TRUE,LenderDescription
+LenderAddress1,Lender Details,Lender Address Line 1,LOOKUP,,all,,TRUE,LenderAddress1
+LenderAddress2,Lender Details,Lender Address Line 2,LOOKUP,,all,,FALSE,LenderAddress2
+LenderSignerName,Lender Details,Lender Signer Name,LOOKUP,,all,,TRUE,LenderSignerName
+LenderSignerTitle,Lender Details,Lender Signer Title,LOOKUP,,all,,TRUE,LenderSignerTitle
