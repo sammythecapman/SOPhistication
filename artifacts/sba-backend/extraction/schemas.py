@@ -16,10 +16,53 @@ from typing import Dict, Tuple
 from pydantic import ValidationError
 
 from .errors import ExtractionStageError
+from .field_registry import FieldRegistry
 from .models import DealStructure, validate_extracted_fields
 from .prompts.registry import load_prompt
 
 logger = logging.getLogger(__name__)
+
+
+# ── Legacy-orphan fallback ──
+# The following keys were always emitted by the previous hardcoded
+# build_schema() but are NOT present in extraction/terms_definitions.csv.
+# Per the field-registry rollout: do not silently drop them. Keep the
+# original gating verbatim so downstream formatting/regex_fallbacks
+# don't lose their inputs while the firm decides whether to add these
+# to the CSV or remove them from the codebase.
+#
+# The corresponding orphan list is logged as a warning at module load
+# (see below) and surfaced in the rollout-summary checklist.
+_LEGACY_ORPHAN_ALWAYS = {
+    "SpreadShort": "",
+    "SpreadLong": "",
+    "InitialRateShort": "",
+    "InitialRateLong": "",
+    "MaturityDate": "",
+    "InitialPaymentDate": "",
+    "DealType": "",
+    "State": "",
+}
+_LEGACY_ORPHAN_REAL_ESTATE = {
+    "CommercialRealEstate": "",
+    "ResidentialRealEstate": "",
+}
+_LEGACY_ORPHAN_CONSTRUCTION = {
+    "Construction": "",
+}
+
+_ORPHAN_FIELDS = sorted(
+    set(_LEGACY_ORPHAN_ALWAYS)
+    | set(_LEGACY_ORPHAN_REAL_ESTATE)
+    | set(_LEGACY_ORPHAN_CONSTRUCTION)
+)
+
+logger.warning(
+    "schemas.build_schema: %d orphan field(s) not in terms_definitions.csv; "
+    "preserved as legacy fallback (decide whether to add to CSV or remove "
+    "from codebase): %s",
+    len(_ORPHAN_FIELDS), _ORPHAN_FIELDS,
+)
 
 
 def _claude_with_retry(client, max_retries: int = 5, **kwargs):
@@ -132,116 +175,35 @@ def analyze_deal_structure(
 
 
 def build_schema(deal: dict) -> dict:
+    """Return only the fields applicable to this deal.
+
+    Driven by FieldRegistry.fields_for_deal(deal) — DERIVED and LOOKUP
+    field types are excluded since they aren't extraction targets
+    (DERIVED is post-processed by the formatting layer; LOOKUP is
+    resolved by the lender registry post-extraction).
+
+    Legacy-orphan keys (see _LEGACY_ORPHAN_* above) are added on top so
+    downstream code that still references them continues to work. The
+    orphan list is logged as a warning at module load.
+
+    NOTE: LoanType is intentionally omitted. It is derived from the
+    deal-analysis stage's `loan_program` (validated by the DealStructure
+    Literal) and injected into raw_data by the pipeline after
+    extract_fields. Re-adding it here would let Claude guess values
+    like "Variable" from interest-rate context.
     """
-    Return only the fields applicable to this deal type.
-    Avoids extracting irrelevant fields.
-    """
-    fields = {
-        "SBALoanNumber":        "",
-        "SBALoanName":          "",
-        "SBAApprovalDate":      "",
-        "LoanAmountShort":      "",
-        "LoanAmountLong":       "",
-        # NOTE: LoanType is intentionally omitted here. It is derived from
-        # the deal-analysis stage's `loan_program` (validated by the
-        # DealStructure Literal) and injected into raw_data by the pipeline
-        # after extract_fields. Re-adding it here would let Claude guess
-        # values like "Variable" from interest-rate context.
-        "SpreadShort":          "",
-        "SpreadLong":           "",
-        "InitialRateShort":     "",
-        "InitialRateLong":      "",
-        "MaturityDate":         "",
-        "InitialPaymentDate":   "",
-        "FirstPaymentAmountShort": "",
-        "FirstPaymentAmountLong":  "",
-        "LenderName":           "",
-        "LenderDescription":    "",
-        "LenderAddress1":       "",
-        "LenderAddress2":       "",
-        "Borrower1Name":        "",
-        "Borrower1Description": "",
-        "Borrower1StateOfOrganization": "",
-        "BorrowerAddress1":     "",
-        "BorrowerAddress2":     "",
-        "DealType":             "",
-        "State":                "",
-    }
+    fields: dict = {}
+    for d in FieldRegistry.fields_for_deal(deal):
+        if d.data_type in ("DERIVED", "LOOKUP"):
+            continue
+        fields[d.field_name] = ""
 
-    if deal.get("has_second_borrower"):
-        fields.update({
-            "Borrower2Name":        "",
-            "Borrower2Description": "",
-            "Borrower2StateOfOrganization": "",
-        })
-
-    count = deal.get("personal_guarantor_count", 0)
-    for i in range(1, min(count + 1, 5)):
-        fields[f"PersonalGuarantor{i}"] = ""
-
-    cg_count = deal.get("corporate_guarantor_count", 0)
-    for i in range(1, min(cg_count + 1, 5)):
-        fields.update({
-            f"CompanyGuarantor{i}Name":                "",
-            f"CompanyGuarantor{i}Description":         "",
-            f"CompanyGuarantor{i}StateOfOrganization": "",
-            f"CompanyGuarantor{i}Signor":              "",
-            f"CompanyGuarantor{i}Title":               "",
-        })
-
-    if deal.get("has_real_estate"):
-        fields.update({
-            "PropertyAPN":          "",
-            "PropertyCity":         "",
-            "PropertyCounty":       "",
-            "PropertyState":        "",
-            "CommercialRealEstate": "",
-            "ResidentialRealEstate":"",
-            "Mortgages/DeedsOfTrust": "",
-            "TitleCompanyName":     "",
-        })
-
+    # Legacy-orphan fallback (gated to match the previous behavior).
+    fields.update(_LEGACY_ORPHAN_ALWAYS)
+    if deal.get("has_real_estate") or deal.get("deal_involves_real_estate"):
+        fields.update(_LEGACY_ORPHAN_REAL_ESTATE)
     if deal.get("has_construction"):
-        fields.update({
-            "GeneralContractorName":          "",
-            "GeneralContractorDescription":   "",
-            "GeneralContractorAddress1":      "",
-            "GeneralContractorAddress2":      "",
-            "ConstructionContractTitle":      "",
-            "ConstructionContractDate":       "",
-            "ConstructionContractAmountShort":"",
-            "ConstructionContractAmountLong": "",
-            "ConstructionPeriod":             "",
-            "ArchitectName":                  "",
-            "ArchitectDescription":           "",
-            "ArchitectContractTitle":         "",
-            "ArchitectContractDate":          "",
-            "ArchitectAddress1":              "",
-            "ArchitectAddress2":              "",
-            "Construction":                   "",
-            "InterestReserveAmountShort":     "",
-            "InterestReserveAmountLong":      "",
-        })
-
-    if (deal.get("has_seller") or
-            deal.get("deal_type") in ["Asset Purchase", "Stock Purchase"] or
-            "purchase" in deal.get("deal_type", "").lower()):
-        fields.update({
-            "SellerName":       "",
-            "SellerDescription":"",
-            "SellerSignerName": "",
-            "SellerSignerTitle":"",
-            "InjectionAmountShort": "",
-            "InjectionAmountLong":  "",
-        })
-
-    if deal.get("has_landlord_lease"):
-        fields.update({
-            "LeaseDate":          "",
-            "LeaseAgreementTitle":"",
-            "LandlordName":       "",
-            "LandlordDescription":"",
-        })
+        fields.update(_LEGACY_ORPHAN_CONSTRUCTION)
 
     return fields
 

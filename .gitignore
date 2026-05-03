@@ -55,3 +55,6 @@ artifacts/sba-backend/mock_sharepoint_library/*
 # Stray files from misfired pip installs (e.g. `pip install pkg>=42.0.0`
 # with shell redirection writing a file named `=42.0.0` instead of installing).
 =*
+
+# Replit upload artifacts (not source of truth)
+attached_assets/

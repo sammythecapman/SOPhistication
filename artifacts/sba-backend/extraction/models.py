@@ -7,7 +7,7 @@ database.
 import logging
 from typing import Dict, Literal, Set, Tuple
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,63 @@ class DealStructure(BaseModel):
         "SBA 504",
         "Conventional",
     ]
+
+    # ── Field-registry context keys ──
+    # The eight keys referenced by `applicable_when` expressions in
+    # extraction/terms_definitions.csv are:
+    #   borrower_count, company_guarantor_count, personal_guarantor_count,
+    #   has_lease, deal_involves_real_estate, requires_equity_injection,
+    #   requires_life_insurance, has_interest_reserve.
+    #
+    # Of those eight, `borrower_count` and `personal_guarantor_count` are
+    # ALREADY declared above as Claude-emitted fields and are NOT
+    # redeclared or touched by the wire-through validator.
+    #
+    # The remaining six are declared below. Three of them mirror existing
+    # Claude-emitted fields (legacy names retained for backward compat —
+    # both names live in the dump simultaneously). The other three default
+    # to False with a TODO until a future prompt iteration teaches Claude
+    # to infer them from the T&Cs.
+    company_guarantor_count: int = Field(default=0, ge=0, le=20)
+    has_lease: bool = False
+    deal_involves_real_estate: bool = False
+    requires_equity_injection: bool = False  # TODO: infer from T&Cs in a later prompt
+    requires_life_insurance: bool = False    # TODO: infer from T&Cs in a later prompt
+    has_interest_reserve: bool = False       # TODO: infer from T&Cs in a later prompt
+
+    @model_validator(mode="after")
+    def _wire_through_registry_keys(self) -> "DealStructure":
+        """Populate the registry-context keys from existing Claude-emitted fields.
+
+        The eight keys named in the field-registry rollout are:
+          borrower_count, company_guarantor_count, personal_guarantor_count,
+          has_lease, deal_involves_real_estate, requires_equity_injection,
+          requires_life_insurance, has_interest_reserve.
+
+        Of those, two (borrower_count, personal_guarantor_count) are
+        already Claude-emitted fields above and need no wiring. Three are
+        wired through verbatim from the legacy field of the same meaning:
+
+          company_guarantor_count := corporate_guarantor_count
+          has_lease               := has_landlord_lease
+          deal_involves_real_estate := has_real_estate
+
+        The remaining three (requires_equity_injection, requires_life_insurance,
+        has_interest_reserve) have no existing source on DealStructure and
+        stay at their `False` default until a later prompt iteration teaches
+        Claude to infer them.
+
+        Both the legacy name and the new name remain present on the dump
+        for backward compatibility — they are NOT aliases.
+
+        Assignment is unconditional. The current deal_analysis prompt does
+        not emit the new key names, so this cannot clobber model-supplied
+        values. If a future prompt change starts emitting them, revisit.
+        """
+        self.company_guarantor_count = self.corporate_guarantor_count
+        self.has_lease = self.has_landlord_lease
+        self.deal_involves_real_estate = self.has_real_estate
+        return self
 
 
 class ExtractedFields(BaseModel):
