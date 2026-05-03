@@ -24,45 +24,30 @@ logger = logging.getLogger(__name__)
 
 
 # ── Legacy-orphan fallback ──
-# The following keys were always emitted by the previous hardcoded
-# build_schema() but are NOT present in extraction/terms_definitions.csv.
-# Per the field-registry rollout: do not silently drop them. Keep the
-# original gating verbatim so downstream formatting/regex_fallbacks
-# don't lose their inputs while the firm decides whether to add these
-# to the CSV or remove them from the codebase.
+# Keys still emitted by the legacy build_schema() that are NOT yet in
+# extraction/terms_definitions.csv. Each remaining entry has been
+# triaged and is being intentionally retained pending a firm decision.
 #
-# The corresponding orphan list is logged as a warning at module load
-# (see below) and surfaced in the rollout-summary checklist.
+# Removed in the field-registry rollout follow-up (now defined in CSV):
+#   SpreadShort, SpreadLong, InitialRateShort, InitialRateLong,
+#   MaturityDate, InitialPaymentDate
+#
+# Removed as confirmed dead (no readers anywhere in the codebase):
+#   DealType (SharePoint payload reads deal_structure.deal_type instead),
+#   CommercialRealEstate, ResidentialRealEstate, Construction
 _LEGACY_ORPHAN_ALWAYS = {
-    "SpreadShort": "",
-    "SpreadLong": "",
-    "InitialRateShort": "",
-    "InitialRateLong": "",
-    "MaturityDate": "",
-    "InitialPaymentDate": "",
-    "DealType": "",
     "State": "",
 }
-_LEGACY_ORPHAN_REAL_ESTATE = {
-    "CommercialRealEstate": "",
-    "ResidentialRealEstate": "",
-}
-_LEGACY_ORPHAN_CONSTRUCTION = {
-    "Construction": "",
-}
 
-_ORPHAN_FIELDS = sorted(
-    set(_LEGACY_ORPHAN_ALWAYS)
-    | set(_LEGACY_ORPHAN_REAL_ESTATE)
-    | set(_LEGACY_ORPHAN_CONSTRUCTION)
-)
+_ORPHAN_FIELDS = sorted(_LEGACY_ORPHAN_ALWAYS)
 
-logger.warning(
-    "schemas.build_schema: %d orphan field(s) not in terms_definitions.csv; "
-    "preserved as legacy fallback (decide whether to add to CSV or remove "
-    "from codebase): %s",
-    len(_ORPHAN_FIELDS), _ORPHAN_FIELDS,
-)
+if _ORPHAN_FIELDS:
+    logger.warning(
+        "schemas.build_schema: %d orphan field(s) not in terms_definitions.csv; "
+        "preserved as legacy fallback (decide whether to add to CSV or remove "
+        "from codebase): %s",
+        len(_ORPHAN_FIELDS), _ORPHAN_FIELDS,
+    )
 
 
 def _claude_with_retry(client, max_retries: int = 5, **kwargs):
@@ -198,12 +183,8 @@ def build_schema(deal: dict) -> dict:
             continue
         fields[d.field_name] = ""
 
-    # Legacy-orphan fallback (gated to match the previous behavior).
+    # Legacy-orphan fallback (only "State" remains pending a firm decision).
     fields.update(_LEGACY_ORPHAN_ALWAYS)
-    if deal.get("has_real_estate") or deal.get("deal_involves_real_estate"):
-        fields.update(_LEGACY_ORPHAN_REAL_ESTATE)
-    if deal.get("has_construction"):
-        fields.update(_LEGACY_ORPHAN_CONSTRUCTION)
 
     return fields
 

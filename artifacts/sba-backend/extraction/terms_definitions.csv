@@ -5,6 +5,8 @@ Year,Dating the Doc Set,Execution Year,DERIVED,,all,,FALSE,Year
 SBALoanNumber,SBA Loan Info,SBA Loan Number,string,terms_conditions|authorization,all,,TRUE,SBALoanNumber
 SBALoanName,SBA Loan Info,SBA Loan Name,string,terms_conditions|authorization,all,,TRUE,SBALoanName
 SBAApprovalDate,SBA Loan Info,SBA Approval Date,date,terms_conditions|authorization,all,,TRUE,SBAApprovalDate
+MaturityDate,SBA Loan Info,Maturity Date,date,terms_conditions|note,all,,TRUE,MaturityDate
+InitialPaymentDate,SBA Loan Info,Initial Payment Date,date,note|terms_conditions|authorization,all,,TRUE,InitialPaymentDate
 FirstPaymentAmountShort,SBA Loan Info,First Payment Amount (Numeric),currency,terms_conditions|note,all,,TRUE,FirstPaymentAmountShort
 FirstPaymentAmountLong,SBA Loan Info,First Payment Amount (Words),currency_words,terms_conditions|note,all,,TRUE,FirstPaymentAmountLong
 GuarantyAmountShort,SBA Loan Info,Guaranty Amount (Numeric),currency,terms_conditions|authorization,all,,TRUE,GuarantyAmountShort
@@ -36,8 +38,10 @@ MortgageDOT_Title_Singular,Subject Property Details,Mortgage/DOT Title (Singular
 MortgageDOT_Title_Plural,Subject Property Details,Mortgage/DOT Title (Plural),DERIVED,,all,deal_involves_real_estate == True,FALSE,MortgageDOTTitlePlural
 LoanAmountLong,Loan Details,Loan Amount (Words),currency_words,terms_conditions|authorization|note,all,,TRUE,LoanAmountLong
 LoanAmountShort,Loan Details,Loan Amount (Numeric),currency,terms_conditions|authorization|note,all,,TRUE,LoanAmountShort
-Spread,Loan Details,Interest Rate Spread,percent,terms_conditions|authorization,all,,TRUE,Spread
-InitialRate,Loan Details,Initial Interest Rate,percent,terms_conditions|note,all,,TRUE,InitialRate
+SpreadShort,Loan Details,Interest Rate Spread (Numeric),percent,terms_conditions|authorization,all,,TRUE,SpreadShort
+SpreadLong,Loan Details,Interest Rate Spread (Words),DERIVED,,all,,TRUE,SpreadLong
+InitialRateShort,Loan Details,Initial Interest Rate (Numeric),percent,terms_conditions|note,all,,TRUE,InitialRateShort
+InitialRateLong,Loan Details,Initial Interest Rate (Words),DERIVED,,all,,TRUE,InitialRateLong
 CompanyGuarantor1Name,Company Guarantor 1,Company Guarantor 1 Name,string,terms_conditions|guaranty|organizational_docs,all,company_guarantor_count >= 1,FALSE,CompanyGuarantor1Name
 CompanyGuarantor1Description,Company Guarantor 1,Company Guarantor 1 Entity Description,string,terms_conditions|guaranty|organizational_docs,all,company_guarantor_count >= 1,FALSE,CompanyGuarantor1Description
 CompanyGuarantor1Signor,Company Guarantor 1,Company Guarantor 1 Signer Name,string,organizational_docs|resolution,all,company_guarantor_count >= 1,FALSE,CompanyGuarantor1Signor
