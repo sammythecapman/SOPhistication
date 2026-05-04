@@ -201,6 +201,40 @@ def run_extraction_pipeline(
                 raw_data[k] = v
                 raw_sources.pop(k, None)
 
+    # ── Derive Borrower1 entity type from Borrower1Description ──
+    # The CSV marks LimitedLiabilityCompany/Corporation as DERIVED so it
+    # never enters the extraction schema. We project Borrower1Description
+    # onto the legacy {LLC, Corporation} enum here — the Description has
+    # already been resolved (verbatim or inferred per the prompt's
+    # inference-allowed list) and contains the same evidence that the
+    # entity-type enum encodes. Doing this deterministically eliminates
+    # the run-to-run noise where Claude sometimes inferred the enum from
+    # the borrower's name suffix and sometimes left it empty (the field
+    # wasn't on the inference-allowed list, so the strict-verbatim
+    # contract didn't formally permit Claude to fill it). Source citation
+    # carries over from Borrower1Description so the UI shows the same
+    # evidence trail that justifies both inferences. Anything outside the
+    # {LLC, Corporation} set (S-corp, partnership, sole prop, …) leaves
+    # the field empty — matches prior behavior, and the legacy enum can't
+    # represent those anyway.
+    desc_raw = raw_data.get("Borrower1Description") or ""
+    desc = desc_raw.lower()
+    entity_type = ""
+    if (
+        "limited liability" in desc
+        or " llc" in desc
+        or desc.endswith("llc")
+        or " l.l.c." in desc
+    ):
+        entity_type = "LLC"
+    elif "corporation" in desc or " corp" in desc or desc.endswith("corp"):
+        entity_type = "Corporation"
+    if entity_type:
+        raw_data["LimitedLiabilityCompany/Corporation"] = entity_type
+        desc_src = raw_sources.get("Borrower1Description")
+        if desc_src:
+            raw_sources["LimitedLiabilityCompany/Corporation"] = desc_src
+
     # ── Source citations — process supervision ──
     # Build the full per-field citations dict (covers every populated field,
     # including non-scored ones like amounts/dates/addresses) BEFORE confidence

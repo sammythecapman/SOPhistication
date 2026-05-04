@@ -55,10 +55,19 @@ class TestFieldRegistry(unittest.TestCase):
         self.assertTrue(FieldRegistry.is_lookup("LenderSignerName"))
         self.assertFalse(FieldRegistry.is_lookup("LenderName"))
 
-    def test_enum_with_inline_values(self):
+    def test_entity_type_is_derived(self):
+        # LimitedLiabilityCompany/Corporation was originally declared as
+        # `enum:LLC|Corporation` and asked of Claude as a normal extraction
+        # field, but the strict-verbatim source-citation contract gave it
+        # no inference allowance, so Claude filled it inconsistently
+        # (sometimes inferring "Corporation" from "Inc.", sometimes leaving
+        # empty). It is now DERIVED — pipeline.py projects
+        # Borrower1Description onto the {LLC, Corporation} set after
+        # extraction. The CSV-level data_type must stay DERIVED so the
+        # field is excluded from build_schema and Claude is never asked.
         d = FieldRegistry.get("LimitedLiabilityCompany/Corporation")
-        self.assertEqual(d.data_type, "enum")
-        self.assertEqual(d.enum_values, ["LLC", "Corporation"])
+        self.assertEqual(d.data_type, "DERIVED")
+        self.assertIsNone(d.enum_values)
 
     def test_borrower2_excluded_when_count_is_1(self):
         ctx = dict(DEFAULTS, borrower_count=1)

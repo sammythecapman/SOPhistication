@@ -18,7 +18,7 @@ Borrower1SignerName,Borrower 1,Borrower 1 Signer Name,string,organizational_docs
 Borrower1SignerTitle,Borrower 1,Borrower 1 Signer Title,string,organizational_docs|resolution,all,,TRUE,Borrower1SignerTitle
 Borrower1StateOfOrganization,Borrower 1,Borrower 1 State of Organization,string,organizational_docs|terms_conditions,all,,TRUE,Borrower1StateOfOrganization
 Borrower1DepositAccountNumber,Borrower 1,Borrower 1 Deposit Account Number,string,deposit_account_verification,all,,FALSE,Borrower1DepositAccountNumber
-LimitedLiabilityCompany/Corporation,Borrower 1,Borrower 1 Entity Type,enum:LLC|Corporation,organizational_docs|terms_conditions,all,,TRUE,EntityType
+LimitedLiabilityCompany/Corporation,Borrower 1,Borrower 1 Entity Type,DERIVED,,all,,TRUE,EntityType
 NoticeAddress1,Borrower 1,Notice Address Line 1,string,terms_conditions|organizational_docs,all,,TRUE,NoticeAddress1
 NoticeAddress2,Borrower 1,Notice Address Line 2,string,terms_conditions|organizational_docs,all,,FALSE,NoticeAddress2
 Borrower2Name,Borrower 2,Borrower 2 Name,string,terms_conditions|organizational_docs,all,borrower_count >= 2,FALSE,Borrower2Name
