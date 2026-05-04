@@ -254,6 +254,23 @@ def apply_field_formatting(data: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 formatted_data[field_name] = ""
 
+    # FIRST-PASS SUPPLEMENT: Derive DERIVED-typed *Long percent fields
+    # (SpreadLong, InitialRateLong) when their *Short counterpart is
+    # populated but the *Long key isn't present in the input. The CSV
+    # marks these as DERIVED, so they're excluded from build_schema()
+    # and never appear in raw_data — without this block they would
+    # silently disappear from formatted_data even when the Short value
+    # was extracted successfully. Currency *Long fields are derived in
+    # the loop above because their *Long keys are still extraction
+    # targets in the CSV (not DERIVED).
+    for short_name in ("SpreadShort", "InitialRateShort"):
+        long_name = short_name.replace("Short", "Long")
+        if long_name in formatted_data:
+            continue
+        short_val = data.get(short_name)
+        if short_val and str(short_val).strip():
+            formatted_data[long_name] = percentage_to_words(short_val)
+
     # SECOND PASS: Apply formatting to all fields
     for field_name, value in data.items():
         if not value or str(value).strip() == "":

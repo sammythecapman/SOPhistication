@@ -82,10 +82,10 @@ ArchitectContractTitle,Architect Contract Details,Architect Contract Title,strin
 ArchitectContractDate,Architect Contract Details,Architect Contract Date,date,architect_contract,all,deal_type == 'construction',FALSE,ArchitectContractDate
 ArchitectAddress1,Architect Contract Details,Architect Address Line 1,string,architect_contract,all,deal_type == 'construction',FALSE,ArchitectAddress1
 ArchitectAddress2,Architect Contract Details,Architect Address Line 2,string,architect_contract,all,deal_type == 'construction',FALSE,ArchitectAddress2
-SellerName,Seller Details,Seller Name,string,purchase_agreement|terms_conditions,asset_purchase|stock_purchase,"deal_type in ['asset_purchase','stock_purchase']",FALSE,SellerName
-SellerDescription,Seller Details,Seller Entity Description,string,purchase_agreement|terms_conditions,asset_purchase|stock_purchase,"deal_type in ['asset_purchase','stock_purchase']",FALSE,SellerDescription
-SellerSignerName,Seller Details,Seller Signer Name,string,purchase_agreement|organizational_docs,asset_purchase|stock_purchase,"deal_type in ['asset_purchase','stock_purchase']",FALSE,SellerSignerName
-SellerSignerTitle,Seller Details,Seller Signer Title,string,purchase_agreement|organizational_docs,asset_purchase|stock_purchase,"deal_type in ['asset_purchase','stock_purchase']",FALSE,SellerSignerTitle
+SellerName,Seller Details,Seller Name,string,purchase_agreement|terms_conditions,asset_purchase|stock_purchase,"deal_type in ['Asset Purchase','Stock Purchase']",FALSE,SellerName
+SellerDescription,Seller Details,Seller Entity Description,string,purchase_agreement|terms_conditions,asset_purchase|stock_purchase,"deal_type in ['Asset Purchase','Stock Purchase']",FALSE,SellerDescription
+SellerSignerName,Seller Details,Seller Signer Name,string,purchase_agreement|organizational_docs,asset_purchase|stock_purchase,"deal_type in ['Asset Purchase','Stock Purchase']",FALSE,SellerSignerName
+SellerSignerTitle,Seller Details,Seller Signer Title,string,purchase_agreement|organizational_docs,asset_purchase|stock_purchase,"deal_type in ['Asset Purchase','Stock Purchase']",FALSE,SellerSignerTitle
 LeaseAgreementTitle,Lease Details,Lease Agreement Title,string,lease,all,has_lease == True,FALSE,LeaseAgreementTitle
 LeaseDate,Lease Details,Lease Date,date,lease,all,has_lease == True,FALSE,LeaseDate
 LandlordName,Lease Details,Landlord Name,string,lease,all,has_lease == True,FALSE,LandlordName
@@ -97,8 +97,8 @@ LifeInsuranceAmountLong,Equity/Life Ins/Int Reserve,Life Insurance Amount (Words
 InterestReserveAmountShort,Equity/Life Ins/Int Reserve,Interest Reserve Amount (Numeric),currency,terms_conditions,all,has_interest_reserve == True,FALSE,InterestReserveAmountShort
 InterestReserveAmountLong,Equity/Life Ins/Int Reserve,Interest Reserve Amount (Words),currency_words,terms_conditions,all,has_interest_reserve == True,FALSE,InterestReserveAmountLong
 LenderName,Lender Details,Lender Name,string,terms_conditions|authorization,all,,TRUE,LenderName
-LenderDescription,Lender Details,Lender Entity Description,LOOKUP,,all,,TRUE,LenderDescription
-LenderAddress1,Lender Details,Lender Address Line 1,LOOKUP,,all,,TRUE,LenderAddress1
-LenderAddress2,Lender Details,Lender Address Line 2,LOOKUP,,all,,FALSE,LenderAddress2
+LenderDescription,Lender Details,Lender Entity Description,string,terms_conditions|authorization,all,,TRUE,LenderDescription
+LenderAddress1,Lender Details,Lender Address Line 1,string,terms_conditions|authorization,all,,TRUE,LenderAddress1
+LenderAddress2,Lender Details,Lender Address Line 2,string,terms_conditions|authorization,all,,FALSE,LenderAddress2
 LenderSignerName,Lender Details,Lender Signer Name,LOOKUP,,all,,TRUE,LenderSignerName
 LenderSignerTitle,Lender Details,Lender Signer Title,LOOKUP,,all,,TRUE,LenderSignerTitle

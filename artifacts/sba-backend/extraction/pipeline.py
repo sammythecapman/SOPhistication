@@ -17,6 +17,7 @@ import anthropic
 from .ner_engine import load_ner_model, run_ner, merge_ner_results, format_ner_hints
 from .schemas import analyze_deal_structure, build_schema, extract_fields  # noqa: F401
 from .formatting import apply_field_formatting
+from .lender_registry import LenderRegistry
 from .regex_fallbacks import regex_extract_critical_fields
 from .confidence import score_extracted_fields
 from .errors import ExtractionStageError
@@ -170,6 +171,35 @@ def run_extraction_pipeline(
     raw_data["LoanType"] = loan_program
     if loan_program:
         raw_sources["LoanType"] = "[deal_analysis]"
+
+    # ── LenderRegistry override ──
+    # When the extracted LenderName matches a record in lenders.csv,
+    # the registry's canonical values override Claude's extraction for
+    # the lender's description, addresses, and signer block. Registry
+    # data is treated as authoritative because it represents the firm's
+    # known-good record for that lender. The override is a no-op when:
+    #   - lenders.csv is absent (registry loads empty, lookup returns None)
+    #   - LenderName is empty or doesn't match any canonical name/alias
+    #   - the matched record's field is empty
+    # In any of those cases the upstream extraction value is preserved.
+    # LenderSignerName/Title are LOOKUP-only (the source documents don't
+    # name the lender's signer), so they only become populated when the
+    # registry has a hit; otherwise they stay absent — matching pre-fix
+    # behavior. The raw_sources entry is cleared on override so the UI
+    # doesn't display a misleading model quote alongside a registry value.
+    lender_record = LenderRegistry.lookup(raw_data.get("LenderName", ""))
+    if lender_record:
+        registry_overrides = {
+            "LenderDescription": lender_record.lender_description,
+            "LenderAddress1":    lender_record.lender_address_1,
+            "LenderAddress2":    lender_record.lender_address_2,
+            "LenderSignerName":  lender_record.lender_signer_name,
+            "LenderSignerTitle": lender_record.lender_signer_title,
+        }
+        for k, v in registry_overrides.items():
+            if v and str(v).strip():
+                raw_data[k] = v
+                raw_sources.pop(k, None)
 
     # ── Source citations — process supervision ──
     # Build the full per-field citations dict (covers every populated field,
