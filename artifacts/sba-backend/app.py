@@ -22,6 +22,7 @@ import db
 import file_security
 from extraction.pipeline import run_extraction_pipeline
 from extraction.errors import ExtractionStageError
+from extraction.schemas import project_to_canonical
 
 # ──────────────────────────────────────────────
 # App setup
@@ -352,8 +353,16 @@ def download_extraction(extraction_id: int):
         if not extraction:
             return jsonify({"error": "Extraction not found"}), 404
 
-        formatted = extraction.get("formatted_data", {})
+        # Project onto the canonical superset so EVERY downloaded JSON has the
+        # exact same keys in the exact same order regardless of deal shape, and
+        # legacy (narrow-shape) rows download identically to new ones. This is
+        # the single output chokepoint for downstream-consumer stability; the
+        # stored/served (UI) shape stays deal-relevant to avoid cluttering the
+        # review screen with inapplicable fields.
+        formatted = project_to_canonical(extraction.get("formatted_data", {}))
         borrower = formatted.get("Borrower1Name", "extraction").replace(" ", "_")
+        if not borrower:
+            borrower = "extraction"
         filename = f"SBA_Extraction_{borrower}_{extraction_id}.json"
 
         data = json.dumps(formatted, indent=2).encode("utf-8")

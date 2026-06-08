@@ -32,9 +32,20 @@ type StageFailure = {
   raw_excerpt?: string;
 };
 
+type OverflowWarning = {
+  group: string;
+  label: string;
+  reported: number;
+  ceiling: number;
+  dropped: number;
+  message: string;
+};
+
 type ExtractionHealth = {
   degraded: boolean;
   stage_failures: StageFailure[];
+  // Added by the stable-schema work. Older rows omit this; treat as [].
+  overflow_warnings?: OverflowWarning[];
 };
 
 // Per-field source citation produced by the v2 field_extraction prompt.
@@ -118,7 +129,17 @@ function formatStageFailure(f: StageFailure): string {
 
 function HealthBanner({ health }: { health: ExtractionHealth }) {
   const [dismissed, setDismissed] = useState(false);
-  if (!health?.degraded || dismissed) return null;
+  const overflows = health?.overflow_warnings ?? [];
+  const hasStageFailures = !!health?.degraded && health.stage_failures.length > 0;
+  const hasOverflows = overflows.length > 0;
+  if ((!hasStageFailures && !hasOverflows) || dismissed) return null;
+
+  // Title reflects the more severe condition: stage failures mean blank fields
+  // may be unreliable; overflow alone means captured data is fine but surplus
+  // parties were truncated.
+  const title = hasStageFailures
+    ? "Partial extraction — review carefully"
+    : "Some parties may be missing — review carefully";
 
   return (
     <Alert
@@ -134,13 +155,15 @@ function HealthBanner({ health }: { health: ExtractionHealth }) {
       >
         <X className="h-4 w-4" />
       </button>
-      <AlertTitle className="font-semibold pr-8">
-        Partial extraction — review carefully
-      </AlertTitle>
+      <AlertTitle className="font-semibold pr-8">{title}</AlertTitle>
       <AlertDescription className="text-amber-800">
         <ul className="list-disc pl-5 space-y-1 mt-1">
-          {health.stage_failures.map((f, i) => (
-            <li key={i}>{formatStageFailure(f)}</li>
+          {hasStageFailures &&
+            health.stage_failures.map((f, i) => (
+              <li key={`sf-${i}`}>{formatStageFailure(f)}</li>
+            ))}
+          {overflows.map((o, i) => (
+            <li key={`of-${i}`}>{o.message}</li>
           ))}
         </ul>
       </AlertDescription>
@@ -476,8 +499,8 @@ export function ResultsView({ extraction }: { extraction: ExtractionDetailExt })
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
-      {/* Health banner — only shows when degraded */}
-      {extraction.extraction_health?.degraded && (
+      {/* Health banner — shows on stage-failure degradation OR party overflow */}
+      {extraction.extraction_health && (
         <HealthBanner health={extraction.extraction_health} />
       )}
 

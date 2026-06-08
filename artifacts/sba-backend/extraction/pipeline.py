@@ -16,6 +16,7 @@ import anthropic
 
 from .ner_engine import load_ner_model, run_ner, merge_ner_results, format_ner_hints
 from .schemas import analyze_deal_structure, build_schema, extract_fields  # noqa: F401
+from .field_registry import FieldRegistry
 from .formatting import apply_field_formatting
 from .lender_registry import LenderRegistry
 from .regex_fallbacks import regex_extract_critical_fields
@@ -123,6 +124,38 @@ def run_extraction_pipeline(
         )
         stage_failures.append(e.to_dict())
         deal = {}
+
+    # ── Overflow guard ──
+    # The repeating party groups have hard ceilings baked into the CSV
+    # (Borrower 1-2, PersonalGuarantor 1-4, CompanyGuarantor 1-4 — firm
+    # confirmed). When the deal-analysis stage reports MORE parties than a
+    # group can hold, Claude is never asked for the surplus slots and that
+    # data is silently dropped. We detect the overflow here (counts vs the
+    # registry-derived ceilings) and record a structured warning so reviewers
+    # are loudly told that parties may be missing from the output.
+    overflow_warnings: list = []
+    _ceilings = FieldRegistry.repeating_group_ceilings()
+    _overflow_checks = [
+        ("borrower", "borrower_count", "borrowers"),
+        ("personal_guarantor", "personal_guarantor_count", "personal guarantors"),
+        ("company_guarantor", "company_guarantor_count", "company guarantors"),
+    ]
+    for group, count_key, label in _overflow_checks:
+        ceiling = _ceilings.get(group, 0)
+        reported = deal.get(count_key)
+        if isinstance(reported, int) and ceiling and reported > ceiling:
+            dropped = reported - ceiling
+            overflow_warnings.append({
+                "group": group,
+                "label": label,
+                "reported": reported,
+                "ceiling": ceiling,
+                "dropped": dropped,
+                "message": (
+                    f"Deal reported {reported} {label} but only {ceiling} "
+                    f"can be captured — review for {dropped} dropped {label}."
+                ),
+            })
 
     # ── Build Schema ──
     schema = build_schema(deal)
@@ -321,9 +354,16 @@ def run_extraction_pipeline(
     total = len(formatted_data)
     completion_pct = round((found / total) * 100, 1) if total > 0 else 0.0
 
+    # `degraded` remains scoped to stage failures (its established meaning:
+    # a Claude stage failed so blank fields may reflect a failure rather than
+    # missing data). Overflow is a distinct condition — every field that WAS
+    # captured is reliable, but surplus parties were truncated — so it lives
+    # in its own list. The frontend banner renders when degraded OR there are
+    # overflow warnings.
     extraction_health = {
         "degraded": len(stage_failures) > 0,
         "stage_failures": stage_failures,
+        "overflow_warnings": overflow_warnings,
     }
 
     return {

@@ -288,6 +288,52 @@ class FieldRegistry:
         return list(cls._definitions)
 
     @classmethod
+    def canonical_field_names(cls) -> List[str]:
+        """All CSV-defined field names in CSV (definition) order.
+
+        This is the registry-driven backbone of the stable output schema.
+        Adding or removing a CSV row automatically changes this list, so the
+        canonical output schema stays in sync with the firm's field set with
+        no second edit. DERIVED/LOOKUP rows are intentionally included — they
+        are part of the firm's documented field set and are emitted as ""
+        when unpopulated (e.g. Month/Year/NotaryBlockMonth).
+        """
+        return [d.field_name for d in cls._definitions]
+
+    @classmethod
+    def repeating_group_ceilings(cls) -> Dict[str, int]:
+        """Hard ceilings for each repeating party group, derived from the CSV.
+
+        Counts the numbered slots present in the field set rather than
+        hardcoding 2/4/4 — if the firm ever adds/removes a Borrower or
+        Guarantor slot in the CSV, the overflow guard tracks it automatically.
+
+        Returns a dict keyed by group name with the highest slot index seen:
+          {"borrower": 2, "personal_guarantor": 4, "company_guarantor": 4}
+        """
+        borrower: Set[int] = set()
+        personal: Set[int] = set()
+        company: Set[int] = set()
+        for d in cls._definitions:
+            name = d.field_name
+            m = re.match(r"PersonalGuarantor(\d+)", name)
+            if m:
+                personal.add(int(m.group(1)))
+                continue
+            m = re.match(r"CompanyGuarantor(\d+)", name)
+            if m:
+                company.add(int(m.group(1)))
+                continue
+            m = re.match(r"Borrower(\d+)", name)
+            if m:
+                borrower.add(int(m.group(1)))
+        return {
+            "borrower": max(borrower) if borrower else 0,
+            "personal_guarantor": max(personal) if personal else 0,
+            "company_guarantor": max(company) if company else 0,
+        }
+
+    @classmethod
     def get(cls, field_name: str) -> FieldDefinition:
         return cls._by_name[field_name]
 

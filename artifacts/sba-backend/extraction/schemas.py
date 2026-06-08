@@ -155,6 +155,69 @@ def build_schema(deal: dict) -> dict:
     return fields
 
 
+def canonical_output_fields() -> list:
+    """The fixed, ordered superset of keys every extraction JSON emits.
+
+    Derived from the registry (NOT hardcoded): all CSV-defined field names in
+    CSV order, with the pipeline-injected ``LoanType`` inserted at the head of
+    the "Loan Details" group (immediately before ``LoanAmountLong``). LoanType
+    is the only output key that isn't a CSV row — it is classified by the
+    deal-analysis stage and mirrored into the field output — so it must be
+    spliced into the canonical order explicitly.
+
+    Because this is registry-driven, adding/removing a CSV row updates the
+    canonical schema automatically with no second edit here.
+    """
+    names = FieldRegistry.canonical_field_names()
+    if "LoanType" in names:
+        return names
+    try:
+        idx = names.index("LoanAmountLong")
+    except ValueError:
+        idx = len(names)
+    names.insert(idx, "LoanType")
+    return names
+
+
+def project_to_canonical(formatted: Dict[str, str]) -> Dict[str, str]:
+    """Project a formatted-data dict onto the canonical output schema.
+
+    Returns a NEW dict containing exactly the canonical keys, in canonical
+    order, filling any missing key with "". Keys outside the canonical set are
+    dropped with a warn-log (there should be none in practice — every output
+    key is either a CSV field or the injected LoanType, all of which are
+    canonical). The operation is idempotent: projecting an already-canonical
+    dict returns an equal dict.
+
+    This is the single chokepoint that guarantees downstream consumers always
+    receive the same keys in the same order regardless of deal shape, and that
+    legacy (narrow-shape) rows come out with the same shape as new ones.
+    """
+    # Defensive: tolerate malformed historical blobs (None / non-dict) without
+    # raising — a download must never 500 on a legacy row.
+    if not isinstance(formatted, dict):
+        formatted = {}
+    canonical = canonical_output_fields()
+    canonical_set = set(canonical)
+    for key in formatted:
+        if key not in canonical_set:
+            logger.warning(
+                "project_to_canonical: dropping non-canonical key %r", key,
+            )
+    result: Dict[str, str] = {}
+    for key in canonical:
+        val = formatted.get(key, "")
+        # Enforce the contract: every value is a string, unused slots are "".
+        # Legacy rows may store null or non-string values; coerce them so the
+        # downloaded JSON is uniformly typed for downstream consumers.
+        if val is None:
+            val = ""
+        elif not isinstance(val, str):
+            val = str(val)
+        result[key] = val
+    return result
+
+
 def extract_fields(
     terms_text: str, memo_text: str, schema: dict, deal: dict,
     ner_hints: str, client,
