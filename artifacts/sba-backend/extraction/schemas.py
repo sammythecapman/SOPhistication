@@ -225,19 +225,18 @@ def extract_fields(
     """
     Second Claude API call: extract all relevant fields with NER hints injected.
 
+    Uses Anthropic tool use ("record_extracted_fields") so Claude returns
+    structured data the SDK parses for us, eliminating the malformed-JSON
+    failure class that free-text JSON output is prone to (e.g. unescaped
+    quotes inside verbatim `_source` citations).
+
     Returns (values, sources, prompt_version):
       - values: dict reconciled against the dynamic schema (unknown keys
         dropped, non-strings coerced, missing keys filled with "")
-      - sources: parallel dict of paired `<key>_source` quotes from the v2
-        prompt's process-supervision contract; same key set as `values`
+      - sources: parallel dict of paired `<key>_source` quotes; same key set
       - prompt_version: the version tag of the field_extraction template used
     """
     schema_str = json.dumps(schema, indent=2)
-    # NOTE: load_prompt resolves to the latest version, currently v2 — which
-    # asks the model to return paired `<FieldName>_source` keys for every
-    # schema key. The pipeline's quote-verification step depends on this
-    # contract; if you pin back to v1, source dicts will be empty and the
-    # `field_sources` UI block will disappear gracefully.
     template, prompt_version = load_prompt("field_extraction")
     prompt = template.format(
         deal_type=deal.get("deal_type", "Unknown"),
@@ -248,13 +247,35 @@ def extract_fields(
         schema_str=schema_str,
     )
 
+    # Build a tool whose input_schema mirrors the dynamic field set: one string
+    # property per field plus its paired `<field>_source` citation key. Forcing
+    # this tool makes Claude return schema-valid structured JSON every time.
+    tool_properties: Dict[str, dict] = {}
+    for key in schema.keys():
+        tool_properties[key] = {"type": "string"}
+        tool_properties[f"{key}_source"] = {"type": "string"}
+
+    field_tool = {
+        "name": "record_extracted_fields",
+        "description": (
+            "Record every extracted field value and its verbatim source quote "
+            "from the loan documents. Provide a value for every property; use an "
+            "empty string when a field is not present in the documents."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": tool_properties,
+        },
+    }
+
     try:
         response = _claude_with_retry(
             client,
             model="claude-sonnet-4-6",
-            # Doubled for paired _source quotes per field (v2 prompt)
-            max_tokens=8192,
-            messages=[{"role": "user", "content": prompt}]
+            max_tokens=16384,
+            tools=[field_tool],
+            tool_choice={"type": "tool", "name": "record_extracted_fields"},
+            messages=[{"role": "user", "content": prompt}],
         )
     except Exception as e:
         logger.error(
@@ -266,35 +287,23 @@ def extract_fields(
             message=f"Anthropic API call failed: {e}",
         )
 
-    raw = response.content[0].text
-    cleaned = _strip_code_fence(raw)
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError as e:
-        excerpt = raw[:500] if raw else ""
-        logger.error(
-            "extract_fields: JSON decode failed (%s). Raw excerpt: %r",
-            e, excerpt,
-        )
-        raise ExtractionStageError(
-            stage="field_extraction",
-            reason="json_decode",
-            message=f"Claude returned malformed JSON for field extraction: {e}",
-            raw_excerpt=excerpt,
-        )
+    # Pull the structured input out of the forced tool_use block. The SDK has
+    # already parsed it into a dict, so there is no JSON text to decode.
+    parsed = None
+    for block in response.content:
+        if getattr(block, "type", None) == "tool_use" and block.name == "record_extracted_fields":
+            parsed = block.input
+            break
 
     if not isinstance(parsed, dict):
         logger.error(
-            "extract_fields: Claude returned non-dict JSON (%s). Raw excerpt: %r",
-            type(parsed).__name__, raw[:500] if raw else "",
+            "extract_fields: no tool_use block returned (stop_reason=%s)",
+            getattr(response, "stop_reason", "unknown"),
         )
         raise ExtractionStageError(
             stage="field_extraction",
             reason="schema_validation",
-            message=(
-                "Claude returned a non-object JSON value for field extraction "
-                f"(got {type(parsed).__name__})."
-            ),
+            message="Claude did not return the expected record_extracted_fields tool call.",
         )
 
     try:
