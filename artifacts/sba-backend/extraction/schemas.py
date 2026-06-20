@@ -81,7 +81,7 @@ def analyze_deal_structure(
     try:
         response = _claude_with_retry(
             client,
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=512,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -251,7 +251,7 @@ def extract_fields(
     try:
         response = _claude_with_retry(
             client,
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             # Doubled for paired _source quotes per field (v2 prompt)
             max_tokens=8192,
             messages=[{"role": "user", "content": prompt}]
