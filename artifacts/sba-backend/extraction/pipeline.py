@@ -72,11 +72,26 @@ def run_extraction_pipeline(
         if on_stage:
             on_stage(stage, stage_label, progress)
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY environment variable is not set")
-
-    client = anthropic.Anthropic(api_key=api_key)
+    # Build the Claude client. If the Foundry env vars are present, route in-tenant
+    # through Claude in Microsoft Foundry; otherwise use the direct Anthropic API.
+    # Both expose the same Messages API (tools, tool_use, etc.), so the two calls
+    # in schemas.py are unchanged either way.
+    foundry_endpoint = os.environ.get("ANTHROPIC_FOUNDRY_ENDPOINT")
+    if foundry_endpoint:
+        foundry_key = os.environ.get("ANTHROPIC_FOUNDRY_API_KEY")
+        if not foundry_key:
+            raise RuntimeError(
+                "ANTHROPIC_FOUNDRY_ENDPOINT is set but ANTHROPIC_FOUNDRY_API_KEY is not"
+            )
+        client = anthropic.AnthropicFoundry(
+            base_url=foundry_endpoint,
+            api_key=foundry_key,
+        )
+    else:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError("ANTHROPIC_API_KEY environment variable is not set")
+        client = anthropic.Anthropic(api_key=api_key)
 
     # ── Stage 1: Read PDFs ──
     update_stage("reading_pdf", "Reading PDF documents", 5)
