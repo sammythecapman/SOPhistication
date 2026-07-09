@@ -21,7 +21,7 @@ services:
       DATABASE_URL: postgresql://sba:localdev@db:5432/sba
       NODE_ENV: production
       PORT: "8080"
-      SHAREPOINT_MODE: mock
+      SHAREPOINT_MODE: live
       ALLOWED_ORIGINS: http://localhost:5173
     ports: ["8080:8080"]
     depends_on:

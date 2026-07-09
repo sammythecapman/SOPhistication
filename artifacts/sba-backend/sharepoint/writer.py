@@ -16,6 +16,9 @@ class SharePointWriter:
         self.auth = SharePointAuth()
         self.site_url = os.environ.get("SHAREPOINT_SITE_URL", "")
         self.list_name = os.environ.get("SHAREPOINT_LIST_NAME", "SBA Extractions")
+        # Document library (drive) to drop JSON into. Dropoff is its own library
+        # on the root site, not a folder inside the default "Documents" library.
+        self.library_name = os.environ.get("SHAREPOINT_LIBRARY_NAME", "Dropoff")
         self.graph_base = "https://graph.microsoft.com/v1.0"
 
     @property
@@ -27,14 +30,37 @@ class SharePointWriter:
         import requests
 
         site_url = self.site_url.rstrip("/")
-        parts = site_url.replace("https://", "").split("/", 1)
+        remainder = site_url.replace("https://", "").replace("http://", "")
+        parts = remainder.split("/", 1)
         hostname = parts[0]
-        site_path = parts[1] if len(parts) > 1 else ""
+        site_path = parts[1].strip("/") if len(parts) > 1 else ""
 
-        url = f"{self.graph_base}/sites/{hostname}:/{site_path}"
+        if site_path:
+            url = f"{self.graph_base}/sites/{hostname}:/{site_path}"
+        else:
+            # Root site of the host — no path segment (e.g. kylejohnsonlaw.sharepoint.com)
+            url = f"{self.graph_base}/sites/{hostname}"
+
         response = requests.get(url, headers=self.auth.get_headers())
         response.raise_for_status()
         return response.json()["id"]
+
+    def _get_drive_id(self, site_id: str, library_name: str) -> str:
+        """Resolve a document library (drive) on the site by its display name."""
+        import requests
+
+        url = f"{self.graph_base}/sites/{site_id}/drives"
+        response = requests.get(url, headers=self.auth.get_headers())
+        response.raise_for_status()
+        drives = response.json().get("value", [])
+        for d in drives:
+            if d.get("name", "").lower() == library_name.lower():
+                return d["id"]
+        available = ", ".join(repr(d.get("name")) for d in drives) or "(none)"
+        raise RuntimeError(
+            f"SharePoint library {library_name!r} not found on site. "
+            f"Available libraries: {available}"
+        )
 
     def push_to_list(self, extraction_data: Dict[str, Any]) -> Dict:
         """
@@ -77,26 +103,29 @@ class SharePointWriter:
         return response.json()
 
     def push_to_folder(self, extraction_data: Dict[str, Any],
-                        folder_name: str = "SBA Extractions") -> Dict:
+                        subfolder: Optional[str] = None) -> Dict:
         """
-        Upload the formatted JSON file to a SharePoint document library folder.
+        Upload the formatted JSON into the configured document library
+        (self.library_name, default "Dropoff"), at the library root or an
+        optional subfolder inside it.
         """
         import requests
         from datetime import datetime
 
         site_id = self._get_site_id()
+        drive_id = self._get_drive_id(site_id, self.library_name)
+
         formatted = extraction_data.get("formatted_data", {})
         borrower = formatted.get("Borrower1Name", "Unknown").replace(" ", "_")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"SBA_Extraction_{borrower}_{timestamp}.json"
 
-        url = (
-            f"{self.graph_base}/sites/{site_id}/drive/root:/{folder_name}/{filename}:/content"
-        )
-        json_bytes = json.dumps(extraction_data.get("formatted_data", {}), indent=2).encode("utf-8")
+        item_path = f"{subfolder.strip('/')}/{filename}" if subfolder else filename
+        url = f"{self.graph_base}/drives/{drive_id}/root:/{item_path}:/content"
 
+        json_bytes = json.dumps(extraction_data.get("formatted_data", {}), indent=2).encode("utf-8")
         headers = self.auth.get_headers()
         headers["Content-Type"] = "application/octet-stream"
         response = requests.put(url, headers=headers, data=json_bytes)
         response.raise_for_status()
-        return {"filename": filename, "item": response.json()}
+        return {"filename": filename, "library": self.library_name, "item": response.json()}
